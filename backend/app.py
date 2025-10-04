@@ -61,10 +61,9 @@ async def generate(image: UploadFile = File(...)):
     # Convert SCAD to STL
     print("Converting SCAD to STL...")
     model_id = str(uuid.uuid4())
-    with open(f"tmp/{model_id}.scad", "w") as f:
+    with open(f"scad/{model_id}.scad", "w") as f:
         f.write(scad_code)
-    subprocess.run(args=["openscad", "-o", f"stl/{model_id}.stl", f"tmp/{model_id}.scad"], check=True)
-    os.remove(f"tmp/{model_id}.scad") # cleanup
+    subprocess.run(args=["openscad", "-o", f"stl/{model_id}.stl", f"scad/{model_id}.scad"], check=True)
 
     print(f"Done! Model ID: {model_id}")
     return {

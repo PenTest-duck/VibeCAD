@@ -1,0 +1,356 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { FilesetResolver, HandLandmarker, HandLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
+
+type GestureType = "ZOOM OUT" | "ZOOM IN" | "LIKE" | "UP" | "DOWN" | "LEFT" | "RIGHT" | "UNKNOWN";
+
+export default function GesturePage() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [handLandmarker, setHandLandmarker] = useState<HandLandmarker | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentGesture, setCurrentGesture] = useState<GestureType>("UNKNOWN");
+  const animationFrameRef = useRef<number>(0);
+
+  // Initialize MediaPipe HandLandmarker
+  useEffect(() => {
+    const initializeHandLandmarker = async () => {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        );
+        
+        const handLandmarkerInstance = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 1,
+          minHandDetectionConfidence: 0.5,
+          minHandPresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+
+        setHandLandmarker(handLandmarkerInstance);
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Error initializing HandLandmarker:", error);
+        setIsLoading(false);
+      }
+    };
+
+    initializeHandLandmarker();
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
+
+  // Start webcam
+  useEffect(() => {
+    const startWebcam = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 1280, height: 720 }
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch (error) {
+        console.error("Error accessing webcam:", error);
+      }
+    };
+
+    startWebcam();
+
+    return () => {
+      if (videoRef.current?.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  // Gesture detection functions (migrated from Python)
+  
+  const distance = (p1: NormalizedLandmark, p2: NormalizedLandmark): number => {
+    return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+  };
+
+  const isFingerExtended = (
+    tip: NormalizedLandmark,
+    pip: NormalizedLandmark,
+    mcp: NormalizedLandmark,
+    threshold: number = 0.7
+  ): boolean => {
+    // Vectors
+    const v1 = [pip.x - mcp.x, pip.y - mcp.y];
+    const v2 = [tip.x - pip.x, tip.y - pip.y];
+
+    // Compute cosine similarity
+    const dot = v1[0] * v2[0] + v1[1] * v2[1];
+    const norm1 = Math.sqrt(v1[0] ** 2 + v1[1] ** 2);
+    const norm2 = Math.sqrt(v2[0] ** 2 + v2[1] ** 2);
+
+    const cosAngle = dot / (norm1 * norm2 + 1e-6); // avoid div by zero
+
+    return cosAngle > threshold; // >0.7 means finger is mostly straight
+  };
+
+  const fingersUp = (landmarks: NormalizedLandmark[]): number[] => {
+    const tips = [8, 12, 16, 20];
+    const pips = [6, 10, 14, 18];
+    const mcps = [5, 9, 13, 17];
+    const states: number[] = [];
+
+    for (let i = 0; i < tips.length; i++) {
+      const tip = landmarks[tips[i]];
+      const pip = landmarks[pips[i]];
+      const mcp = landmarks[mcps[i]];
+      states.push(isFingerExtended(tip, pip, mcp) ? 1 : 0);
+    }
+
+    return states;
+  };
+
+  const detectDirection = (landmarks: NormalizedLandmark[]): string => {
+    const wrist = landmarks[0];
+    const indexTip = landmarks[8];
+
+    const dx = indexTip.x - wrist.x;
+    const dy = wrist.y - indexTip.y; // Invert y for natural coordinate system
+
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI; // Angle in degrees (-180 to 180)
+
+    // Cardinal directions with explicit ranges
+    if (angle >= 45 && angle <= 135) {
+      return "UP";
+    } else if (angle >= -135 && angle <= -45) {
+      return "DOWN";
+    } else if (angle > -45 && angle < 45) {
+      return "RIGHT";
+    } else {
+      // Covers 135 → 180 and -180 → -135
+      return "LEFT";
+    }
+  };
+
+  const detectGesture = (landmarks: NormalizedLandmark[]): GestureType => {
+    const states = fingersUp(landmarks);
+    const thumbTip = landmarks[4];
+    const indexTip = landmarks[8];
+    const pinchDistance = distance(thumbTip, indexTip);
+
+    // High Five → Zoom Out
+    if (states.join("") === "1111") {
+      return "ZOOM OUT";
+    }
+    // Pinch → Zoom In
+    else if (pinchDistance < 0.05) {
+      return "ZOOM IN";
+    }
+    // Like (Thumb Up)
+    else if (thumbTip.y < landmarks[3].y && states.join("") === "0000") {
+      return "LIKE";
+    }
+    // Index finger pointing → detect direction
+    else if (states.join("") === "1000") {
+      return detectDirection(landmarks) as GestureType;
+    } else {
+      return "UNKNOWN";
+    }
+  };
+
+  // Draw hand landmarks on canvas
+  const drawHandLandmarks = (
+    ctx: CanvasRenderingContext2D,
+    landmarks: NormalizedLandmark[],
+    width: number,
+    height: number
+  ) => {
+    // Draw connections
+    const connections = [
+      [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
+      [0, 5], [5, 6], [6, 7], [7, 8], // Index
+      [5, 9], [9, 10], [10, 11], [11, 12], // Middle
+      [9, 13], [13, 14], [14, 15], [15, 16], // Ring
+      [13, 17], [17, 18], [18, 19], [19, 20], // Pinky
+      [0, 17] // Palm
+    ];
+
+    ctx.strokeStyle = "#00FF00";
+    ctx.lineWidth = 2;
+
+    connections.forEach(([start, end]) => {
+      const startPoint = landmarks[start];
+      const endPoint = landmarks[end];
+      ctx.beginPath();
+      ctx.moveTo(startPoint.x * width, startPoint.y * height);
+      ctx.lineTo(endPoint.x * width, endPoint.y * height);
+      ctx.stroke();
+    });
+
+    // Draw landmarks
+    ctx.fillStyle = "#FF0000";
+    landmarks.forEach((landmark) => {
+      ctx.beginPath();
+      ctx.arc(landmark.x * width, landmark.y * height, 5, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+  };
+
+  // Process video frames
+  useEffect(() => {
+    if (!handLandmarker || !videoRef.current || !canvasRef.current) return;
+
+    let lastVideoTime = -1;
+
+    const processFrame = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+
+      if (!video || !canvas || video.readyState !== 4) {
+        animationFrameRef.current = requestAnimationFrame(processFrame);
+        return;
+      }
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        animationFrameRef.current = requestAnimationFrame(processFrame);
+        return;
+      }
+
+      // Set canvas size to match video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Draw video frame
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Detect hand landmarks
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+
+        const results: HandLandmarkerResult = handLandmarker.detectForVideo(
+          video,
+          performance.now()
+        );
+
+        if (results.landmarks && results.landmarks.length > 0) {
+          const landmarks = results.landmarks[0];
+          
+          // Draw landmarks
+          drawHandLandmarks(ctx, landmarks, canvas.width, canvas.height);
+
+          // Detect gesture
+          const gesture = detectGesture(landmarks);
+          setCurrentGesture(gesture);
+          
+          // Console log gesture changes
+          if (gesture !== "UNKNOWN") {
+            console.log(`Gesture detected: ${gesture}`);
+          }
+
+          // Draw gesture text on canvas (unmirrored)
+          ctx.save();
+          ctx.scale(-1, 1); // Mirror the text back
+          ctx.font = "bold 48px Arial";
+          ctx.fillStyle = "#00FF00";
+          ctx.strokeStyle = "#000000";
+          ctx.lineWidth = 3;
+          ctx.strokeText(`Gesture: ${gesture}`, -canvas.width + 50, 100);
+          ctx.fillText(`Gesture: ${gesture}`, -canvas.width + 50, 100);
+          ctx.restore();
+        } else {
+          setCurrentGesture("UNKNOWN");
+        }
+      }
+
+      animationFrameRef.current = requestAnimationFrame(processFrame);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(processFrame);
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [handLandmarker]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center p-8">
+      <div className="max-w-6xl w-full">
+        <h1 className="text-4xl font-bold text-white mb-4 text-center">
+          Hand Gesture Detection
+        </h1>
+        <p className="text-slate-300 text-center mb-8">
+          Try these gestures: <span className="font-semibold">Open Palm (Zoom Out)</span>, <span className="font-semibold">Pinch (Zoom In)</span>, <span className="font-semibold">Thumbs Up (Like)</span>, <span className="font-semibold">Point (Directional)</span>
+        </p>
+
+        {isLoading && (
+          <div className="text-white text-center mb-4">
+            Loading MediaPipe Hand Landmarker...
+          </div>
+        )}
+
+        <div className="relative w-full max-w-4xl mx-auto bg-black rounded-lg overflow-hidden shadow-2xl">
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            className="absolute top-0 left-0 w-full h-full object-cover opacity-0"
+            onLoadedMetadata={(e) => {
+              const video = e.currentTarget;
+              if (canvasRef.current) {
+                canvasRef.current.width = video.videoWidth;
+                canvasRef.current.height = video.videoHeight;
+              }
+            }}
+          />
+          <canvas
+            ref={canvasRef}
+            className="w-full h-full"
+            style={{ transform: "scaleX(-1)" }} // Mirror the video
+          />
+        </div>
+
+        <div className="mt-6 bg-slate-800 rounded-lg p-6 shadow-lg">
+          <h2 className="text-xl font-semibold text-white mb-2">
+            Current Gesture:
+          </h2>
+          <div className={`text-3xl font-bold ${
+            currentGesture === "UNKNOWN" ? "text-slate-400" : "text-green-400"
+          }`}>
+            {currentGesture}
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-white text-sm">
+          <div className="bg-slate-800 p-4 rounded-lg">
+            <div className="font-bold mb-1">🖐️ Open Palm</div>
+            <div className="text-slate-400">Zoom Out</div>
+          </div>
+          <div className="bg-slate-800 p-4 rounded-lg">
+            <div className="font-bold mb-1">🤏 Pinch</div>
+            <div className="text-slate-400">Zoom In</div>
+          </div>
+          <div className="bg-slate-800 p-4 rounded-lg">
+            <div className="font-bold mb-1">👍 Thumbs Up</div>
+            <div className="text-slate-400">Like</div>
+          </div>
+          <div className="bg-slate-800 p-4 rounded-lg">
+            <div className="font-bold mb-1">☝️ Point</div>
+            <div className="text-slate-400">Up/Down/Left/Right</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
