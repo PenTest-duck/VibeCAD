@@ -1,0 +1,6 @@
+scad/*
+!scad/.gitkeep
+stl/*
+!stl/.gitkeep
+glb/*
+!glb/.gitkeep
