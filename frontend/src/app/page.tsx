@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Upload, Palette, Sparkles, ArrowRight, Trash2 } from "lucide-react";
+import ThreeScene from "@/components/ThreeScene";
+import Sandbox from "@/components/Sandbox";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'upload' | 'draw'>('upload');
@@ -305,6 +307,9 @@ export default function Home() {
               </p>
             </div>
           </div>
+        </div>
+        <div className="flex justify-center mt-12">
+          <Sandbox />
         </div>
       </main>
     </div>
