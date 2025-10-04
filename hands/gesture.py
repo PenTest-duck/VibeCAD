@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 import math
+import numpy as np
 
 # Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
@@ -91,14 +92,54 @@ def detect_gesture(hand_landmarks):
     # Pinch → Zoom In
     elif pinch_distance < 0.05:
         return "ZOOM IN"
-    # Like (Thumb Up)
-    elif thumb_tip.y < hand_landmarks.landmark[3].y and states == [0, 0, 0, 0]:
-        return "LIKE"
     # Index finger pointing → detect direction
     elif states == [1, 0, 0, 0]:
         return detect_direction(hand_landmarks)
     else:
         return "UNKNOWN"
+
+def normalize_angle(angle):
+    """
+    Normalize any angle (degrees) to the range (-180, 180].
+    """
+    return (angle + 180) % 360 - 180
+
+
+
+def get_hand_orientation(hand_landmarks):
+    """
+    Estimates hand orientation (pitch, yaw, roll) in degrees using MediaPipe landmarks.
+    Returns (pitch, yaw, roll) or (None, None, None) if invalid.
+    """
+
+    # Key landmarks for palm plane
+    wrist = hand_landmarks.landmark[0]
+    index_mcp = hand_landmarks.landmark[5]
+    pinky_mcp = hand_landmarks.landmark[17]
+    middle_mcp = hand_landmarks.landmark[9]
+
+    # Convert to numpy arrays (3D coordinates)
+    w = np.array([wrist.x, wrist.y, wrist.z])
+    i = np.array([index_mcp.x, index_mcp.y, index_mcp.z])
+    p = np.array([pinky_mcp.x, pinky_mcp.y, pinky_mcp.z])
+    m = np.array([middle_mcp.x, middle_mcp.y, middle_mcp.z])
+
+    # Palm plane normal vector
+    v1 = i - w
+    v2 = p - w
+    normal = np.cross(v1, v2)
+    normal /= np.linalg.norm(normal) + 1e-6
+
+    # Palm forward vector (wrist → middle finger)
+    forward = m - w
+    forward /= np.linalg.norm(forward) + 1e-6
+
+    # Compute orientation angles
+    yaw   = math.degrees(math.atan2(normal[0], normal[2]))  # left/right rotation
+    roll  = math.degrees(math.atan2(forward[1], forward[0]))  # twist
+
+    return yaw, normalize_angle(roll+100)
+
 
 # Open webcam
 cap = cv2.VideoCapture(0)
@@ -122,8 +163,17 @@ with mp_hands.Hands(
             for hand_landmarks in results.multi_hand_landmarks:
                 mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
                 gesture = detect_gesture(hand_landmarks)
-                cv2.putText(frame, f"Gesture: {gesture}", (50, 100),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+                yaw, roll = get_hand_orientation(hand_landmarks)
+
+
+                if gesture != "UNKNOWN":
+                    display_text = f"Gesture: {gesture}"
+                else:
+                    display_text = f"Yaw: {yaw:.1f} degrees, Roll: {roll:.1f} degrees"
+
+
+                cv2.putText(frame, display_text, (50, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
         cv2.imshow("Hand Gesture Recognition", frame)
         if cv2.waitKey(5) & 0xFF == 27:
