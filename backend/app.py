@@ -1,15 +1,22 @@
 import os
+import time
 from fastapi import FastAPI, HTTPException, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from google import genai
 from pydantic import BaseModel
 import io
+import requests
 import subprocess
 import uuid
+import os
 from textwrap import dedent
 from dotenv import load_dotenv
 load_dotenv()
+
+# MESHY_HEADERS = {
+#     "Authorization": f"Bearer {os.getenv('MESHY_API_KEY')}"
+# }
 
 app = FastAPI()
 client = genai.Client()
@@ -63,11 +70,50 @@ async def generate(image: UploadFile = File(...)) -> GenerateResponse:
         scad_code = scad_code[:-3].rstrip()
 
     # Convert SCAD to STL
-    print("Converting SCAD to STL...")
     model_id = str(uuid.uuid4())
+    print(f"Converting SCAD to STL... {model_id}")
     with open(f"scad/{model_id}.scad", "w") as f:
         f.write(scad_code)
     subprocess.run(args=["openscad", "-o", f"stl/{model_id}.stl", f"scad/{model_id}.scad"], check=True)
+
+    # # Convert STL to GLB
+    # print("Converting STL to GLB...")
+    # response = requests.post(
+    #     "https://api.meshy.ai/openapi/v1/remesh",
+    #     headers=MESHY_HEADERS,
+    #     json={
+    #         "model_url": f"{os.getenv('SERVER_URL')}/stl/{model_id}.stl",
+    #         "target_formats": ["glb"],
+    #         # "origin_at": "bottom"
+    #     },
+    # )
+    # response.raise_for_status()
+    # task_id = response.json()["result"]
+
+    # max_retries = 15
+    # time.sleep(2)
+    # for i in range(max_retries):
+    #     print(f"    Attempt {i+1}/{max_retries}... ({time.time()})")
+    #     response = requests.get(
+    #         f"https://api.meshy.ai/openapi/v1/remesh/{task_id}",
+    #         headers=MESHY_HEADERS,
+    #     )
+    #     response.raise_for_status()
+    #     if response.json()["status"] == "SUCCEEDED":
+    #         break
+    #     time.sleep(5)
+    # if response.json()["status"] != "SUCCEEDED":
+    #     raise HTTPException(status_code=500, detail="Failed to convert STL to GLB")
+
+    # print("Downloading GLB file...")
+    # glb_url = response.json()["model_urls"]["glb"]
+    # response = requests.get(
+    #     glb_url,
+    #     headers=MESHY_HEADERS,
+    # )
+    # response.raise_for_status()
+    # with open(f"glb/{model_id}.glb", "wb") as f:
+    #     f.write(response.content)
 
     print(f"Done! Model ID: {model_id}")
     return GenerateResponse(model_id=model_id)
