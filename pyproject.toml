@@ -1,0 +1,21 @@
+[project]
+name = "vibecad"
+version = "0.1.0"
+description = "Vibe-coding for CAD"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "build123d",
+    "cadquery>=2.3.0",
+    "cadquery-ocp>=7.8.1.1.post1",
+    "ezdxf>=1.4.2",
+    "multimethod>=2.0",
+    "nptyping>=2.0.1",
+    "numpy>=2.3.3",
+    "pyparsing>=3.2.5",
+    "typing-extensions>=4.15.0",
+    "typish>=1.9.3",
+]
+
+[tool.uv.sources]
+build123d = { git = "https://github.com/gumyr/build123d" }
