@@ -19,3 +19,6 @@ dependencies = [
 
 [tool.uv.sources]
 build123d = { git = "https://github.com/gumyr/build123d" }
+
+[tool.uv.workspace]
+members = ["backend"]
