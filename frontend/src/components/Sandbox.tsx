@@ -430,24 +430,24 @@ export default function Sandbox3D() {
         {showBounds && <BoundsBox box={bounds} />}
         <OrbitControls makeDefault enableDamping dampingFactor={0.1} />
 
+        {/* Scene content - render first so they're on top */}
+        {items.map((it) => {
+          // Render selectable objects
+          return <Selectable key={it.id} object={it.object} onSelect={setSelected} />;
+        })}
+
         {/* Background mesh for deselection - clicking empty space deselects */}
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, -0.01, 0]}
-          onClick={(e) => {
-            e.stopPropagation();
+          onPointerDown={(e) => {
+            // Only deselect if no object was clicked (event wasn't stopped)
             setSelected(null);
           }}
         >
           <planeGeometry args={[1000, 1000]} />
           <meshBasicMaterial visible={false} />
         </mesh>
-
-        {/* Scene content */}
-        {items.map((it) => {
-          // Render selectable objects
-          return <Selectable key={it.id} object={it.object} onSelect={setSelected} />;
-        })}
 
         {/* Transform controls for selected object */}
         {selected && (
