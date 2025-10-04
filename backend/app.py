@@ -29,7 +29,10 @@ async def generate(image: UploadFile = File(...)):
 
     response = client.models.generate_content(
         model="gemini-2.5-pro",
-        contents=f"Generate a 3D CAD model of the following image: {image.filename}",
+        contents=[
+            file,
+            f"Generate a 3D CAD model of the following image: {image.filename}",
+        ]
     )
 
     
