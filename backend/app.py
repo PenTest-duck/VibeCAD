@@ -48,11 +48,15 @@ async def generate(image: UploadFile = File(...)):
                 Given this hand-drawn sketch, I need you to write SCAD code to model this in 3D.
                 I need you to make the model match as close to the original sketch as possible.
                 Your final response should be SCAD code only. Do not include any other text or comments.
-                Do not begin with ```scad. Just the code.
+                Surround your SCAD code with ```scad and ```.
             """)
         ],
     )
-    scad_code = response.text
+    scad_code = response.text.strip()
+    if scad_code.startswith("```scad"):
+        scad_code = scad_code[len("```scad"):].lstrip()
+    if scad_code.endswith("```"):
+        scad_code = scad_code[:-3].rstrip()
 
     # Convert SCAD to STL
     print("Converting SCAD to STL...")
