@@ -9,4 +9,5 @@ dependencies = [
     "fastapi[standard]>=0.118.0",
     "google-genai>=1.41.0",
     "scad2gltf>=0.0.3",
+    "supabase>=2.21.1",
 ]

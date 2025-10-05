@@ -49,8 +49,8 @@ export async function loadModelFromFile(file: File): Promise<THREE.Object3D> {
           const text = new TextDecoder().decode(arrayBuffer);
           const object = loader.parse(text);
           // Apply default material to OBJ meshes
-          object.traverse((child: any) => {
-            if (child.isMesh) {
+          object.traverse((child: THREE.Object3D) => {
+            if (child instanceof THREE.Mesh) {
               child.material = new THREE.MeshStandardMaterial({
                 color: 0xaaaaaa,
                 roughness: 0.5,

@@ -237,8 +237,8 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
 
   // Add an uploaded object to the scene
   const addObject = useCallback((name: string, object: THREE.Object3D) => {
-    object.traverse((c: any) => {
-      if (c.isMesh) {
+    object.traverse((c: THREE.Object3D) => {
+      if (c instanceof THREE.Mesh) {
         c.castShadow = true; 
         c.receiveShadow = true;
       }
@@ -283,8 +283,9 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
       try {
         const obj = await loadModelFromFile(file);
         addObject(file.name, obj);
-      } catch (e: any) {
-        alert(`Failed to load ${file.name}: ${e.message ?? e}`);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        alert(`Failed to load ${file.name}: ${message}`);
       }
     }
   }, [addObject]);
