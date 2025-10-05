@@ -430,7 +430,9 @@ function GestureObjectController({
   yaw, 
   roll, 
   isFistClosed,
-  bounds
+  bounds,
+  scaleEnabled,
+  movementPlane
 }: { 
   selectedObject: THREE.Object3D;
   gesture: GestureType; 
@@ -438,6 +440,8 @@ function GestureObjectController({
   roll: number | null; 
   isFistClosed: boolean;
   bounds: THREE.Box3;
+  scaleEnabled: boolean;
+  movementPlane: "XZ" | "XY" | "YZ";
 }) {
   const lastYawRef = useRef<number | null>(null);
   const lastRollRef = useRef<number | null>(null);
@@ -453,23 +457,47 @@ function GestureObjectController({
       console.log("Object zoom:", gesture, "Current scale:", selectedObject.scale.x);
     }
     
-    // Directional movements - translate the object
+    // Directional movements - translate the object based on selected plane
     if (gesture === "UP") {
-      selectedObject.position.z -= moveSpeed;
+      if (movementPlane === "XZ") {
+        selectedObject.position.z -= moveSpeed; // Forward/backward
+      } else if (movementPlane === "XY") {
+        selectedObject.position.y += moveSpeed; // Up
+      } else if (movementPlane === "YZ") {
+        selectedObject.position.z -= moveSpeed; // Forward/backward
+      }
     } else if (gesture === "DOWN") {
-      selectedObject.position.z += moveSpeed;
+      if (movementPlane === "XZ") {
+        selectedObject.position.z += moveSpeed; // Forward/backward
+      } else if (movementPlane === "XY") {
+        selectedObject.position.y -= moveSpeed; // Down
+      } else if (movementPlane === "YZ") {
+        selectedObject.position.z += moveSpeed; // Forward/backward
+      }
     } else if (gesture === "LEFT") {
-      selectedObject.position.x -= moveSpeed;
+      if (movementPlane === "XZ") {
+        selectedObject.position.x -= moveSpeed; // Left
+      } else if (movementPlane === "XY") {
+        selectedObject.position.x -= moveSpeed; // Left
+      } else if (movementPlane === "YZ") {
+        selectedObject.position.y += moveSpeed; // Up
+      }
     } else if (gesture === "RIGHT") {
-      selectedObject.position.x += moveSpeed;
-    } else if (gesture === "ZOOM IN") {
+      if (movementPlane === "XZ") {
+        selectedObject.position.x += moveSpeed; // Right
+      } else if (movementPlane === "XY") {
+        selectedObject.position.x += moveSpeed; // Right
+      } else if (movementPlane === "YZ") {
+        selectedObject.position.y -= moveSpeed; // Down
+      }
+    } else if (scaleEnabled && gesture === "ZOOM IN") {
       // Scale down the object - additive for consistent rate (zoom in = make smaller)
       const currentScale = selectedObject.scale.x;
       if (currentScale > 0.001) { // Very small minimum to prevent disappearing
         const newScale = currentScale - (scaleSpeed * 2); // Additive decrease
         selectedObject.scale.setScalar(Math.max(newScale, 0.001));
       }
-    } else if (gesture === "ZOOM OUT") {
+    } else if (scaleEnabled && gesture === "ZOOM OUT") {
       // Scale up the object - additive for consistent rate (zoom out = make bigger)
       const currentScale = selectedObject.scale.x;
       if (currentScale < 500) { // Much larger maximum
@@ -545,6 +573,8 @@ export default function Sandbox3D() {
   const [gestureRoll, setGestureRoll] = useState<number | null>(null);
   const [gestureFistClosed, setGestureFistClosed] = useState(false);
   const [gestureEnabled, setGestureEnabled] = useState(false);
+  const [gestureScaleEnabled, setGestureScaleEnabled] = useState(false); // Toggle for zoom/scale gestures
+  const [movementPlane, setMovementPlane] = useState<"XZ" | "XY" | "YZ">("XZ"); // Which plane to move on
 
   // Apply smoothing/debouncing to gesture values with persistence during tracking loss
   const smoothedGesture = useSmoothedGesture(
@@ -751,6 +781,44 @@ export default function Sandbox3D() {
         >
           {gestureEnabled ? "👋 Gesture On" : "👋 Gesture Off"}
         </button>
+
+        {/* Gesture Scale Toggle - only show when gesture is enabled and object is selected */}
+        {gestureEnabled && selected && (
+          <button 
+            className={`rounded-lg px-3 py-2 transition-all text-sm font-medium ${gestureScaleEnabled ? "bg-orange-600 hover:bg-orange-700 text-white" : "bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300"} backdrop-blur-md shadow-lg`}
+            onClick={() => setGestureScaleEnabled(!gestureScaleEnabled)}
+            title="Toggle gesture zoom/scale control"
+          >
+            {gestureScaleEnabled ? "🔍 Scale On" : "🔍 Scale Off"}
+          </button>
+        )}
+
+        {/* Movement Plane Selector - only show when object is selected */}
+        {selected && (
+          <div className="flex gap-1 bg-neutral-800/90 backdrop-blur-md rounded-lg p-1 shadow-lg">
+            <button
+              className={`px-2 py-1 rounded text-xs font-medium transition-all ${movementPlane === "XZ" ? "bg-blue-600 text-white" : "text-neutral-400 hover:text-white"}`}
+              onClick={() => setMovementPlane("XZ")}
+              title="Move on XZ plane (ground)"
+            >
+              XZ
+            </button>
+            <button
+              className={`px-2 py-1 rounded text-xs font-medium transition-all ${movementPlane === "XY" ? "bg-blue-600 text-white" : "text-neutral-400 hover:text-white"}`}
+              onClick={() => setMovementPlane("XY")}
+              title="Move on XY plane (front)"
+            >
+              XY
+            </button>
+            <button
+              className={`px-2 py-1 rounded text-xs font-medium transition-all ${movementPlane === "YZ" ? "bg-blue-600 text-white" : "text-neutral-400 hover:text-white"}`}
+              onClick={() => setMovementPlane("YZ")}
+              title="Move on YZ plane (side)"
+            >
+              YZ
+            </button>
+          </div>
+        )}
         
         <button 
           className={`rounded-lg px-3 py-2 transition-all text-sm font-medium ${snap ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300"} backdrop-blur-md shadow-lg`}
@@ -843,6 +911,8 @@ export default function Sandbox3D() {
             roll={smoothedGesture.roll} 
             isFistClosed={smoothedGesture.isFistClosed}
             bounds={bounds}
+            scaleEnabled={gestureScaleEnabled}
+            movementPlane={movementPlane}
           />
         )}
         {gestureEnabled && !selected && (
