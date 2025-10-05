@@ -3,7 +3,7 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, TransformControls, Html, useCursor } from "@react-three/drei";
+import { MapControls, TransformControls, Html, useCursor, GizmoHelper, GizmoViewcube } from "@react-three/drei";
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
@@ -219,6 +219,7 @@ export default function Sandbox3D() {
   const [snapStep, setSnapStep] = useState(0.25);
   const [showBounds, setShowBounds] = useState(true);
   const [showDropMessage, setShowDropMessage] = useState(true);
+  const [showCameraHint, setShowCameraHint] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
 
   // Handle client-side mounting to prevent hydration issues
@@ -231,6 +232,14 @@ export default function Sandbox3D() {
     const timer = setTimeout(() => {
       setShowDropMessage(false);
     }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Fade out camera hint after 8 seconds
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowCameraHint(false);
+    }, 8000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -379,6 +388,20 @@ export default function Sandbox3D() {
         )}
       </div>
 
+      {/* Bottom Left - Camera Controls Hint - fades out after 8 seconds */}
+      {showCameraHint && (
+        <div 
+          className="pointer-events-none absolute left-4 bottom-4 z-10 rounded-lg bg-neutral-900/80 backdrop-blur-md px-3 py-2 text-xs text-neutral-300 shadow-lg border border-neutral-700/50 transition-opacity duration-1000"
+          style={{ opacity: showCameraHint ? 1 : 0 }}
+        >
+          <div className="font-medium mb-1">Camera Controls:</div>
+          <div>🖱️ Left Click: Pan</div>
+          <div>🖱️ Middle Click: Rotate</div>
+          <div>🖱️ Scroll: Zoom</div>
+          <div>🎯 ViewCube: Quick Views</div>
+        </div>
+      )}
+
       {/* Bottom Right Controls */}
       <div className="pointer-events-auto absolute right-4 bottom-4 z-10 flex flex-col gap-2">
         <button 
@@ -428,7 +451,28 @@ export default function Sandbox3D() {
         <Lights />
         <Ground size={Math.max(50, (bounds.max.x - bounds.min.x) * 1.5)} />
         {showBounds && <BoundsBox box={bounds} />}
-        <OrbitControls makeDefault enableDamping dampingFactor={0.1} />
+        
+        {/* MapControls - like Inventor: pan with left click, zoom with wheel, rotate with middle mouse */}
+        <MapControls 
+          makeDefault 
+          enableDamping 
+          dampingFactor={0.1}
+          screenSpacePanning={true}
+          minDistance={5}
+          maxDistance={100}
+          maxPolarAngle={Math.PI / 2 - 0.1}
+        />
+
+        {/* ViewCube - Click to orbit to preset views, like Inventor */}
+        <GizmoHelper alignment="top-right" margin={[80, 80]}>
+          <GizmoViewcube 
+            color="#3b82f6"
+            hoverColor="#60a5fa"
+            textColor="#ffffff"
+            strokeColor="#1e40af"
+            opacity={0.9}
+          />
+        </GizmoHelper>
 
         {/* Scene content - render first so they're on top */}
         {items.map((it) => {
