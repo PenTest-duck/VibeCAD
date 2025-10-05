@@ -32,12 +32,14 @@ interface SandboxUIProps {
   setGesturePitch: (pitch: number | null) => void;
   setGestureYaw: (yaw: number | null) => void;
   setGestureRoll: (roll: number | null) => void;
+  setGesturePitch: (pitch: number | null) => void;
   setGestureFistClosed: (closed: boolean) => void;
   smoothedGesture: {
     gesture: GestureType;
     pitch: number | null;
     yaw: number | null;
     roll: number | null;
+    pitch: number | null;
     isFistClosed: boolean;
   };
   currentGesture: GestureType;
@@ -74,6 +76,7 @@ export function SandboxUI({
   setGesturePitch,
   setGestureYaw,
   setGestureRoll,
+  setGesturePitch,
   setGestureFistClosed,
   smoothedGesture,
   currentGesture,
@@ -271,6 +274,7 @@ export function SandboxUI({
                 setGesturePitch(pitch);
                 setGestureYaw(yaw);
                 setGestureRoll(roll);
+                setGesturePitch(pitch);
               }}
               onFistChange={setGestureFistClosed}
             />

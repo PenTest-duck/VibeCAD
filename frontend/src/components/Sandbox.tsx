@@ -20,6 +20,9 @@ import {
 import { uid, clampVector3ToBox } from "@/utils/helpers";
 import { loadModelFromFile, loadModelById } from "@/utils/model-loader";
 
+// API
+import { editCAD } from "@/api/client";
+
 // Hooks
 import { useSmoothedGesture } from "@/hooks/useSmoothedGesture";
 
@@ -61,6 +64,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   const [gesturePitch, setGesturePitch] = useState<number | null>(null);
   const [gestureYaw, setGestureYaw] = useState<number | null>(null);
   const [gestureRoll, setGestureRoll] = useState<number | null>(null);
+  const [gesturePitch, setGesturePitch] = useState<number | null>(null);
   const [gestureFistClosed, setGestureFistClosed] = useState(false);
   const [gestureEnabled, setGestureEnabled] = useState(false);
   const [gestureScaleEnabled, setGestureScaleEnabled] = useState(false);
@@ -79,6 +83,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
     gesturePitch,
     gestureYaw,
     gestureRoll,
+    gesturePitch,
     gestureFistClosed,
     3
   );
@@ -89,10 +94,25 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   }, []);
   
   // Handle voice commands
-  const handleUtterance = useCallback((utterance: string) => {
+  const handleUtterance = useCallback(async (utterance: string) => {
     console.log("Utterance received:", utterance);
-    // TODO: Implement actual command processing logic here
-  }, []);
+    
+    // Check if utterance is longer than 3 words
+    const words = utterance.trim().split(/\s+/);
+    if (words.length > 3) {
+      try {
+        // Call editCAD if we have a modelId
+        if (modelId) {
+          await editCAD(modelId, utterance);
+          console.log("CAD edit command sent:", utterance);
+        } else {
+          console.log("No modelId available for CAD editing");
+        }
+      } catch (error) {
+        console.error("Failed to edit CAD:", error);
+      }
+    }
+  }, [modelId]);
   
   // Initialize speech recognition
   useEffect(() => {
@@ -345,6 +365,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         setGesturePitch={setGesturePitch}
         setGestureYaw={setGestureYaw}
         setGestureRoll={setGestureRoll}
+        setGesturePitch={setGesturePitch}
         setGestureFistClosed={setGestureFistClosed}
         smoothedGesture={smoothedGesture}
         currentGesture={currentGesture}
@@ -382,7 +403,8 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
             gesture={smoothedGesture.gesture}
             pitch={smoothedGesture.pitch}
             yaw={smoothedGesture.yaw} 
-            roll={smoothedGesture.roll} 
+            roll={smoothedGesture.roll}
+            pitch={smoothedGesture.pitch}
             isFistClosed={smoothedGesture.isFistClosed}
             bounds={bounds}
             scaleEnabled={gestureScaleEnabled}

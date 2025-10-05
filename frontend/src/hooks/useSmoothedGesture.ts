@@ -6,6 +6,7 @@ export function useSmoothedGesture(
   pitch: number | null,
   yaw: number | null,
   roll: number | null,
+  pitch: number | null,
   isFistClosed: boolean,
   smoothingFrames: number = 2
 ) {
@@ -18,6 +19,7 @@ export function useSmoothedGesture(
   const [smoothedPitch, setSmoothedPitch] = useState<number | null>(null);
   const [smoothedYaw, setSmoothedYaw] = useState<number | null>(null);
   const [smoothedRoll, setSmoothedRoll] = useState<number | null>(null);
+  const [smoothedPitch, setSmoothedPitch] = useState<number | null>(null);
 
   useEffect(() => {
     const now = Date.now();
@@ -124,11 +126,28 @@ export function useSmoothedGesture(
     }
   }, [roll]);
 
+  // Minimal smoothing for pitch - almost direct pass-through
+  useEffect(() => {
+    if (pitch !== null && !isNaN(pitch) && isFinite(pitch)) {
+      if (smoothedPitch === null) {
+        // First value, use directly
+        setSmoothedPitch(pitch);
+      } else {
+        // Very light smoothing - 70% new value, 30% old
+        const smoothed = pitch * 0.7 + smoothedPitch * 0.3;
+        setSmoothedPitch(smoothed);
+      }
+    } else {
+      setSmoothedPitch(null);
+    }
+  }, [pitch]);
+
   return {
     gesture: smoothedGesture,
     pitch: smoothedPitch,
     yaw: smoothedYaw,
     roll: smoothedRoll,
+    pitch: smoothedPitch,
     isFistClosed
   };
 }

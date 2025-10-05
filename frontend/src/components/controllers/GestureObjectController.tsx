@@ -10,6 +10,7 @@ interface GestureObjectControllerProps {
   pitch: number | null;
   yaw: number | null;
   roll: number | null;
+  pitch: number | null;
   isFistClosed: boolean;
   bounds: THREE.Box3;
   scaleEnabled: boolean;
@@ -21,7 +22,8 @@ export function GestureObjectController({
   gesture,
   pitch, 
   yaw, 
-  roll, 
+  roll,
+  pitch,
   isFistClosed,
   bounds,
   scaleEnabled,
@@ -30,6 +32,7 @@ export function GestureObjectController({
   const lastPitchRef = useRef<number | null>(null);
   const lastYawRef = useRef<number | null>(null);
   const lastRollRef = useRef<number | null>(null);
+  const lastPitchRef = useRef<number | null>(null);
   
   useFrame((state, delta) => {
     // Slower, more precise control
@@ -175,6 +178,9 @@ export function GestureObjectController({
       lastYawRef.current = null;
       lastRollRef.current = null;
     }
+    // KEY FIX: When fist opens, we DON'T reset the refs!
+    // This allows rotation to accumulate across multiple fist gestures,
+    // just like pitch_rotation in gesture.py
     
     // Clamp position to bounds
     selectedObject.position.clamp(bounds.min, bounds.max);
