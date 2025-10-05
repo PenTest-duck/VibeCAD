@@ -274,6 +274,7 @@ function CameraRig() {
 // Minimal smoothing - prioritize responsiveness over stability
 function useSmoothedGesture(
   gesture: GestureType,
+  pitch: number | null,
   yaw: number | null,
   roll: number | null,
   isFistClosed: boolean,
@@ -285,6 +286,7 @@ function useSmoothedGesture(
   const unknownCountRef = useRef(0);
   const sameGestureCountRef = useRef(0);
   const [smoothedGesture, setSmoothedGesture] = useState<GestureType>("UNKNOWN");
+  const [smoothedPitch, setSmoothedPitch] = useState<number | null>(null);
   const [smoothedYaw, setSmoothedYaw] = useState<number | null>(null);
   const [smoothedRoll, setSmoothedRoll] = useState<number | null>(null);
 
@@ -345,6 +347,22 @@ function useSmoothedGesture(
     lastGestureRef.current = gesture;
   }, [gesture, smoothingFrames]);
 
+  // Minimal smoothing for pitch - almost direct pass-through
+  useEffect(() => {
+    if (pitch !== null && !isNaN(pitch) && isFinite(pitch)) {
+      if (smoothedPitch === null) {
+        // First value, use directly
+        setSmoothedPitch(pitch);
+      } else {
+        // Very light smoothing - 70% new value, 30% old
+        const smoothed = pitch * 0.7 + smoothedPitch * 0.3;
+        setSmoothedPitch(smoothed);
+      }
+    } else {
+      setSmoothedPitch(null);
+    }
+  }, [pitch]);
+
   // Minimal smoothing for yaw - almost direct pass-through
   useEffect(() => {
     if (yaw !== null && !isNaN(yaw) && isFinite(yaw)) {
@@ -379,6 +397,7 @@ function useSmoothedGesture(
 
   return {
     gesture: smoothedGesture,
+    pitch: smoothedPitch,
     yaw: smoothedYaw,
     roll: smoothedRoll,
     isFistClosed
@@ -387,18 +406,21 @@ function useSmoothedGesture(
 
 // Gesture-controlled camera movement (when no object is selected)
 function GestureCameraController({ 
-  gesture, 
+  gesture,
+  pitch,
   yaw, 
   roll, 
   isFistClosed 
 }: { 
-  gesture: GestureType; 
+  gesture: GestureType;
+  pitch: number | null;
   yaw: number | null; 
   roll: number | null; 
   isFistClosed: boolean;
 }) {
   const { camera } = useThree();
   const targetRef = useRef(new THREE.Vector3(0, 0, 0));
+  const lastPitchRef = useRef<number | null>(null);
   const lastYawRef = useRef<number | null>(null);
   const lastRollRef = useRef<number | null>(null);
   
@@ -406,11 +428,11 @@ function GestureCameraController({
     // Slower, more controlled movement
     const moveSpeed = 5 * delta; // Reduced from 8
     const zoomSpeed = 6 * delta;
-    const rotateSpeed = 0.8 * delta; // Reduced sensitivity
+    const rotateSpeed = 0.9; // 60% of previous speed (was 1.5)
     
-    // Debug: Log when a non-UNKNOWN gesture is received
-    if (gesture !== "UNKNOWN" && Math.random() < 0.1) { // Log 10% of frames to avoid spam
-      console.log("Camera gesture:", gesture);
+    // Debug: Log when rotation is happening
+    if (isFistClosed && Math.random() < 0.05) {
+      console.log("Camera rotation - Pitch:", pitch?.toFixed(1), "Yaw:", yaw?.toFixed(1), "Roll:", roll?.toFixed(1));
     }
     
     // Directional movements - move camera and target together
@@ -444,37 +466,89 @@ function GestureCameraController({
       }
     }
     
-    // Fist rotation - orbit camera around target
-    if (isFistClosed && yaw !== null && roll !== null) {
-      if (lastYawRef.current !== null && lastRollRef.current !== null) {
-        const yawDelta = yaw - lastYawRef.current;
-        const rollDelta = roll - lastRollRef.current;
+    // Fist rotation - orbit camera around target using pitch, yaw, and roll
+    // Only rotate on ONE axis at a time - the one with the largest change
+    if (isFistClosed && pitch !== null && yaw !== null && roll !== null) {
+      if (lastPitchRef.current !== null && lastYawRef.current !== null && lastRollRef.current !== null) {
+        const pitchDelta = pitch - lastPitchRef.current; // Hand tilting up/down
+        const yawDelta = yaw - lastYawRef.current; // Wrist turning horizontally
+        const rollDelta = roll - lastRollRef.current; // Fist rotating clockwise/counterclockwise
         
-        // Dead zone - ignore small movements
-        const deadZone = 2; // degrees
+        // Adjusted dead zones for each axis (pitch needs lower threshold)
+        const pitchDeadZone = 1.5; // Lower for pitch sensitivity
+        const yawDeadZone = 2.5;   // Higher to distinguish from roll
+        const rollDeadZone = 2.0;  // Medium for roll
         
-        if (Math.abs(yawDelta) > deadZone) {
-          // Orbit around Y axis (yaw)
-          const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
-          const clampedYawDelta = THREE.MathUtils.clamp(yawDelta, -15, 15); // Limit max rotation per frame
-          const quaternion = new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 1, 0), 
-            THREE.MathUtils.degToRad(clampedYawDelta * rotateSpeed)
-          );
-          offset.applyQuaternion(quaternion);
-          camera.position.copy(targetRef.current).add(offset);
+        // Find which axis has the largest change
+        const absPitch = Math.abs(pitchDelta);
+        const absYaw = Math.abs(yawDelta);
+        const absRoll = Math.abs(rollDelta);
+        const maxDelta = Math.max(absPitch, absYaw, absRoll);
+        
+        // Different dominance requirements for different axes
+        let shouldRotate = false;
+        let rotationAxis: 'pitch' | 'yaw' | 'roll' | null = null;
+        
+        if (absPitch === maxDelta && absPitch > pitchDeadZone) {
+          // Pitch: needs to be 1.3x larger than others (more sensitive)
+          if (absPitch > absYaw * 1.3 && absPitch > absRoll * 1.3) {
+            shouldRotate = true;
+            rotationAxis = 'pitch';
+          }
+        } else if (absYaw === maxDelta && absYaw > yawDeadZone) {
+          // Yaw: needs to be 1.8x larger than roll (stronger separation from roll)
+          if (absYaw > absPitch * 1.4 && absYaw > absRoll * 1.8) {
+            shouldRotate = true;
+            rotationAxis = 'yaw';
+          }
+        } else if (absRoll === maxDelta && absRoll > rollDeadZone) {
+          // Roll: needs to be 1.6x larger than yaw (distinguish from wrist turning)
+          if (absRoll > absPitch * 1.4 && absRoll > absYaw * 1.6) {
+            shouldRotate = true;
+            rotationAxis = 'roll';
+          }
         }
         
-        if (Math.abs(rollDelta) > deadZone) {
-          // Adjust height based on roll
-          const clampedRollDelta = THREE.MathUtils.clamp(rollDelta, -15, 15);
-          camera.position.y += clampedRollDelta * rotateSpeed * 0.3;
+        if (shouldRotate && rotationAxis) {
+          if (rotationAxis === 'pitch') {
+            // Pitch - orbit around Z axis (hand tilting up/down)
+            const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
+            const clampedPitchDelta = THREE.MathUtils.clamp(pitchDelta, -15, 15);
+            const quaternion = new THREE.Quaternion().setFromAxisAngle(
+              new THREE.Vector3(0, 0, 1), 
+              THREE.MathUtils.degToRad(clampedPitchDelta * rotateSpeed)
+            );
+            offset.applyQuaternion(quaternion);
+            camera.position.copy(targetRef.current).add(offset);
+          } else if (rotationAxis === 'yaw') {
+            // Yaw - orbit around Y axis (wrist turning horizontally)
+            const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
+            const clampedYawDelta = THREE.MathUtils.clamp(yawDelta, -15, 15);
+            const quaternion = new THREE.Quaternion().setFromAxisAngle(
+              new THREE.Vector3(0, 1, 0), 
+              THREE.MathUtils.degToRad(clampedYawDelta * rotateSpeed)
+            );
+            offset.applyQuaternion(quaternion);
+            camera.position.copy(targetRef.current).add(offset);
+          } else if (rotationAxis === 'roll') {
+            // Roll - orbit around X axis (fist rotating clockwise/counterclockwise)
+            const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
+            const clampedRollDelta = THREE.MathUtils.clamp(rollDelta, -15, 15);
+            const quaternion = new THREE.Quaternion().setFromAxisAngle(
+              new THREE.Vector3(1, 0, 0), 
+              THREE.MathUtils.degToRad(clampedRollDelta * rotateSpeed)
+            );
+            offset.applyQuaternion(quaternion);
+            camera.position.copy(targetRef.current).add(offset);
+          }
         }
       }
       
+      lastPitchRef.current = pitch;
       lastYawRef.current = yaw;
       lastRollRef.current = roll;
     } else {
+      lastPitchRef.current = null;
       lastYawRef.current = null;
       lastRollRef.current = null;
     }
@@ -489,7 +563,8 @@ function GestureCameraController({
 // Gesture-controlled object manipulation (when object is selected)
 function GestureObjectController({ 
   selectedObject,
-  gesture, 
+  gesture,
+  pitch,
   yaw, 
   roll, 
   isFistClosed,
@@ -498,7 +573,8 @@ function GestureObjectController({
   movementPlane
 }: { 
   selectedObject: THREE.Object3D;
-  gesture: GestureType; 
+  gesture: GestureType;
+  pitch: number | null;
   yaw: number | null; 
   roll: number | null; 
   isFistClosed: boolean;
@@ -506,6 +582,7 @@ function GestureObjectController({
   scaleEnabled: boolean;
   movementPlane: "XZ" | "XY" | "YZ";
 }) {
+  const lastPitchRef = useRef<number | null>(null);
   const lastYawRef = useRef<number | null>(null);
   const lastRollRef = useRef<number | null>(null);
   
@@ -513,11 +590,11 @@ function GestureObjectController({
     // Slower, more precise control
     const moveSpeed = 1.5 * delta; // Reduced from 2
     const scaleSpeed = 0.00003; // Much slower scaling - 0.03% per frame
-    const rotateSpeed = 1.2 * delta; // Reduced from 2
+    const rotateSpeed = 1.2; // 60% of previous speed (was 2.0)
     
-    // Debug: Log when a zoom gesture is received
-    if ((gesture === "ZOOM IN" || gesture === "ZOOM OUT") && Math.random() < 0.2) {
-      console.log("Object zoom:", gesture, "Current scale:", selectedObject.scale.x);
+    // Debug: Log when rotation is happening
+    if (isFistClosed && Math.random() < 0.05) {
+      console.log("Fist rotation - Pitch:", pitch?.toFixed(1), "Yaw:", yaw?.toFixed(1), "Roll:", roll?.toFixed(1));
     }
     
     // Directional movements - translate the object based on selected plane
@@ -569,41 +646,87 @@ function GestureObjectController({
       }
     }
     
-    // Fist rotation - rotate the object based on yaw and roll
-    if (isFistClosed && yaw !== null && roll !== null) {
+    // Fist rotation - rotate the object based on pitch, yaw, and roll
+    // Only rotate on ONE axis at a time - the one with the largest change
+    if (isFistClosed && pitch !== null && yaw !== null && roll !== null) {
       // Use delta from last frame for smooth rotation
-      if (lastYawRef.current !== null && lastRollRef.current !== null) {
-        const yawDelta = yaw - lastYawRef.current;
-        const rollDelta = roll - lastRollRef.current;
+      if (lastPitchRef.current !== null && lastYawRef.current !== null && lastRollRef.current !== null) {
+        const pitchDelta = pitch - lastPitchRef.current; // Hand tilting up/down
+        const yawDelta = yaw - lastYawRef.current; // Wrist turning horizontally
+        const rollDelta = roll - lastRollRef.current; // Fist rotating clockwise/counterclockwise
         
-        // Dead zone - ignore small movements
-        const deadZone = 2; // degrees
+        // Adjusted dead zones for each axis (pitch needs lower threshold)
+        const pitchDeadZone = 1.5; // Lower for pitch sensitivity
+        const yawDeadZone = 2.5;   // Higher to distinguish from roll
+        const rollDeadZone = 2.0;  // Medium for roll
         
-        if (Math.abs(yawDelta) > deadZone) {
-          // Clamp rotation delta to prevent jumps
-          const clampedYawDelta = THREE.MathUtils.clamp(yawDelta, -15, 15);
-          // Yaw rotates around Y axis
-          selectedObject.rotateOnWorldAxis(
-            new THREE.Vector3(0, 1, 0), 
-            THREE.MathUtils.degToRad(clampedYawDelta * rotateSpeed)
-          );
+        // Find which axis has the largest change
+        const absPitch = Math.abs(pitchDelta);
+        const absYaw = Math.abs(yawDelta);
+        const absRoll = Math.abs(rollDelta);
+        const maxDelta = Math.max(absPitch, absYaw, absRoll);
+        
+        // Different dominance requirements for different axes
+        let shouldRotate = false;
+        let rotationAxis: 'pitch' | 'yaw' | 'roll' | null = null;
+        
+        if (absPitch === maxDelta && absPitch > pitchDeadZone) {
+          // Pitch: needs to be 1.3x larger than others (more sensitive)
+          if (absPitch > absYaw * 1.3 && absPitch > absRoll * 1.3) {
+            shouldRotate = true;
+            rotationAxis = 'pitch';
+          }
+        } else if (absYaw === maxDelta && absYaw > yawDeadZone) {
+          // Yaw: needs to be 1.8x larger than roll (stronger separation from roll)
+          if (absYaw > absPitch * 1.4 && absYaw > absRoll * 1.8) {
+            shouldRotate = true;
+            rotationAxis = 'yaw';
+          }
+        } else if (absRoll === maxDelta && absRoll > rollDeadZone) {
+          // Roll: needs to be 1.6x larger than yaw (distinguish from wrist turning)
+          if (absRoll > absPitch * 1.4 && absRoll > absYaw * 1.6) {
+            shouldRotate = true;
+            rotationAxis = 'roll';
+          }
         }
         
-        if (Math.abs(rollDelta) > deadZone) {
-          // Clamp rotation delta to prevent jumps
-          const clampedRollDelta = THREE.MathUtils.clamp(rollDelta, -15, 15);
-          // Roll rotates around X axis
-          selectedObject.rotateOnWorldAxis(
-            new THREE.Vector3(1, 0, 0), 
-            THREE.MathUtils.degToRad(clampedRollDelta * rotateSpeed)
-          );
+        if (shouldRotate && rotationAxis) {
+          // Log rotation for debugging (sample 5% of frames)
+          if (Math.random() < 0.05) {
+            console.log(`Object rotation [${rotationAxis}] - Pitch: ${pitchDelta.toFixed(1)}° Yaw: ${yawDelta.toFixed(1)}° Roll: ${rollDelta.toFixed(1)}°`);
+          }
+
+          if (rotationAxis === 'pitch') {
+            // Pitch - rotate around Z axis (hand tilting up/down)
+            const clampedPitchDelta = THREE.MathUtils.clamp(pitchDelta, -15, 15);
+            selectedObject.rotateOnWorldAxis(
+              new THREE.Vector3(0, 0, 1), 
+              THREE.MathUtils.degToRad(clampedPitchDelta * rotateSpeed)
+            );
+          } else if (rotationAxis === 'yaw') {
+            // Yaw - rotate around Y axis (wrist turning horizontally)
+            const clampedYawDelta = THREE.MathUtils.clamp(yawDelta, -15, 15);
+            selectedObject.rotateOnWorldAxis(
+              new THREE.Vector3(0, 1, 0), 
+              THREE.MathUtils.degToRad(clampedYawDelta * rotateSpeed)
+            );
+          } else if (rotationAxis === 'roll') {
+            // Roll - rotate around X axis (fist rotating clockwise/counterclockwise)
+            const clampedRollDelta = THREE.MathUtils.clamp(rollDelta, -15, 15);
+            selectedObject.rotateOnWorldAxis(
+              new THREE.Vector3(1, 0, 0), 
+              THREE.MathUtils.degToRad(clampedRollDelta * rotateSpeed)
+            );
+          }
         }
       }
       
+      lastPitchRef.current = pitch;
       lastYawRef.current = yaw;
       lastRollRef.current = roll;
     } else {
       // Reset tracking when fist is not closed
+      lastPitchRef.current = null;
       lastYawRef.current = null;
       lastRollRef.current = null;
     }
@@ -636,6 +759,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   
   // Gesture control state
   const [currentGesture, setCurrentGesture] = useState<GestureType>("UNKNOWN");
+  const [gesturePitch, setGesturePitch] = useState<number | null>(null);
   const [gestureYaw, setGestureYaw] = useState<number | null>(null);
   const [gestureRoll, setGestureRoll] = useState<number | null>(null);
   const [gestureFistClosed, setGestureFistClosed] = useState(false);
@@ -653,6 +777,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   // Apply smoothing/debouncing to gesture values with persistence during tracking loss
   const smoothedGesture = useSmoothedGesture(
     currentGesture,
+    gesturePitch,
     gestureYaw,
     gestureRoll,
     gestureFistClosed,
@@ -1073,7 +1198,8 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
           <div className="mt-2 flex flex-col gap-2">
             <GestureDetector
               onGestureChange={setCurrentGesture}
-              onOrientationChange={(yaw, roll) => {
+              onOrientationChange={(pitch: number | null, yaw: number | null, roll: number | null) => {
+                setGesturePitch(pitch);
                 setGestureYaw(yaw);
                 setGestureRoll(roll);
               }}
@@ -1130,7 +1256,8 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         {gestureEnabled && selected && (
           <GestureObjectController 
             selectedObject={selected}
-            gesture={smoothedGesture.gesture} 
+            gesture={smoothedGesture.gesture}
+            pitch={smoothedGesture.pitch}
             yaw={smoothedGesture.yaw} 
             roll={smoothedGesture.roll} 
             isFistClosed={smoothedGesture.isFistClosed}
@@ -1141,7 +1268,8 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         )}
         {gestureEnabled && !selected && (
           <GestureCameraController 
-            gesture={smoothedGesture.gesture} 
+            gesture={smoothedGesture.gesture}
+            pitch={smoothedGesture.pitch}
             yaw={smoothedGesture.yaw} 
             roll={smoothedGesture.roll} 
             isFistClosed={smoothedGesture.isFistClosed}

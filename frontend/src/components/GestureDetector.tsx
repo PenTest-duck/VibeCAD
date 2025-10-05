@@ -7,7 +7,7 @@ type GestureType = "ZOOM OUT" | "ZOOM IN" | "UP" | "DOWN" | "LEFT" | "RIGHT" | "
 
 interface GestureDetectorProps {
   onGestureChange?: (gesture: GestureType) => void;
-  onOrientationChange?: (yaw: number | null, roll: number | null) => void;
+  onOrientationChange?: (pitch: number | null, yaw: number | null, roll: number | null) => void;
   onFistChange?: (isFistClosed: boolean) => void;
 }
 
@@ -21,6 +21,7 @@ export default function GestureDetector({
   const [handLandmarker, setHandLandmarker] = useState<HandLandmarker | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [currentGesture, setCurrentGesture] = useState<GestureType>("UNKNOWN");
+  const [pitch, setPitch] = useState<number | null>(null);
   const [yaw, setYaw] = useState<number | null>(null);
   const [roll, setRoll] = useState<number | null>(null);
   const [isFistClosed, setIsFistClosed] = useState(false);
@@ -113,40 +114,56 @@ export default function GestureDetector({
     return [v[0] / (norm + 1e-6), v[1] / (norm + 1e-6), v[2] / (norm + 1e-6)];
   };
 
-  const getHandOrientation = (landmarks: NormalizedLandmark[]): { yaw: number; roll: number } | null => {
+  const getHandOrientation = (landmarks: NormalizedLandmark[]): { pitch: number; yaw: number; roll: number } | null => {
     /**
-     * Estimates hand orientation (yaw, roll) in degrees using MediaPipe landmarks.
-     * Returns {yaw, roll}
+     * Estimates hand orientation (pitch, yaw, roll) in degrees using MediaPipe landmarks.
+     * Returns {pitch, yaw, roll}
+     * - Pitch: up/down tilt of the hand (tilting palm up/down)
+     * - Yaw: left/right horizontal rotation (turning wrist horizontally)
+     * - Roll: clockwise/counterclockwise rotation (twisting fist)
      */
     // Key landmarks for palm plane
     const wrist = landmarks[0];
     const indexMcp = landmarks[5];
     const pinkyMcp = landmarks[17];
     const middleMcp = landmarks[9];
+    const middleTip = landmarks[12];
 
     // Convert to arrays (3D coordinates)
     const w = [wrist.x, wrist.y, wrist.z || 0];
     const i = [indexMcp.x, indexMcp.y, indexMcp.z || 0];
     const p = [pinkyMcp.x, pinkyMcp.y, pinkyMcp.z || 0];
     const m = [middleMcp.x, middleMcp.y, middleMcp.z || 0];
+    const mt = [middleTip.x, middleTip.y, middleTip.z || 0];
 
-    // Palm plane normal vector
+    // Vector across palm (index to pinky) for roll detection
+    const palmCross = [i[0] - p[0], i[1] - p[1], i[2] - p[2]];
+    const normalizedPalmCross = normalize3D(palmCross);
+
+    // Palm forward vector (wrist → middle finger tip for better range)
+    const forward = [mt[0] - w[0], mt[1] - w[1], mt[2] - w[2]];
+    const normalizedForward = normalize3D(forward);
+
+    // Palm plane normal vector (perpendicular to palm)
     const v1 = [i[0] - w[0], i[1] - w[1], i[2] - w[2]];
     const v2 = [p[0] - w[0], p[1] - w[1], p[2] - w[2]];
     const normal = normalize3D(crossProduct(v1, v2));
 
-    // Palm forward vector (wrist → middle finger)
-    const forward = [m[0] - w[0], m[1] - w[1], m[2] - w[2]];
-    const normalizedForward = normalize3D(forward);
-
-    // Compute orientation angles
-    const yaw = (Math.atan2(normal[0], normal[2]) * 180) / Math.PI;  // left/right rotation
-    const roll = (Math.atan2(normalizedForward[1], normalizedForward[0]) * 180) / Math.PI;  // twist
+    // Compute orientation angles with improved sensitivity
+    // Pitch: Hand tilting up/down (look at forward vector Y component)
+    const pitch = (Math.atan2(normalizedForward[1], Math.sqrt(normalizedForward[0]**2 + normalizedForward[2]**2)) * 180) / Math.PI;
+    
+    // Yaw: Horizontal rotation (wrist turning left/right) - use palm normal X/Z plane
+    const yaw = (Math.atan2(normal[0], -normal[2]) * 180) / Math.PI;
+    
+    // Roll: Fist rotation (clockwise/counterclockwise) - use palm cross vector angle
+    const roll = (Math.atan2(normalizedPalmCross[1], normalizedPalmCross[0]) * 180) / Math.PI;
 
     // Return angles
     return {
+      pitch: pitch * 1.5,  // Amplify pitch for better sensitivity
       yaw,
-      roll: normalizeAngle(roll + 100)
+      roll
     };
   };
 
@@ -367,9 +384,9 @@ export default function GestureDetector({
 
   useEffect(() => {
     if (onOrientationChange) {
-      onOrientationChange(yaw, roll);
+      onOrientationChange(pitch, yaw, roll);
     }
-  }, [yaw, roll, onOrientationChange]);
+  }, [pitch, yaw, roll, onOrientationChange]);
 
   useEffect(() => {
     if (onFistChange) {
@@ -429,6 +446,7 @@ export default function GestureDetector({
             displayText = drawPointingCursor(ctx, landmarks, canvas.width, canvas.height);
             // Set gesture to UNKNOWN since pointing doesn't control camera/object movement directly
             setCurrentGesture("UNKNOWN");
+            setPitch(null);
             setYaw(null);
             setRoll(null);
           }
@@ -438,6 +456,7 @@ export default function GestureDetector({
             if (gesture !== "UNKNOWN") {
               displayText = `Gesture: ${gesture}`;
               setCurrentGesture(gesture);
+              setPitch(null);
               setYaw(null);
               setRoll(null);
             }
@@ -445,9 +464,10 @@ export default function GestureDetector({
             else if (fistClosed) {
               const orientation = getHandOrientation(landmarks);
               if (orientation) {
+                setPitch(orientation.pitch);
                 setYaw(orientation.yaw);
                 setRoll(orientation.roll);
-                displayText = `Y:${orientation.yaw.toFixed(1)}° R:${orientation.roll.toFixed(1)}°`;
+                displayText = `P:${orientation.pitch.toFixed(1)}° Y:${orientation.yaw.toFixed(1)}° R:${orientation.roll.toFixed(1)}°`;
                 setCurrentGesture("UNKNOWN");
               }
             }
@@ -455,6 +475,7 @@ export default function GestureDetector({
             else {
               displayText = "Gesture: NONE";
               setCurrentGesture("UNKNOWN");
+              setPitch(null);
               setYaw(null);
               setRoll(null);
             }
@@ -473,6 +494,7 @@ export default function GestureDetector({
         } else {
           setCurrentGesture("UNKNOWN");
           setIsFistClosed(false);
+          setPitch(null);
           setYaw(null);
           setRoll(null);
         }
