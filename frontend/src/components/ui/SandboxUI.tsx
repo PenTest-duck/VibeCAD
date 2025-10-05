@@ -31,11 +31,13 @@ interface SandboxUIProps {
   setCurrentGesture: (gesture: GestureType) => void;
   setGestureYaw: (yaw: number | null) => void;
   setGestureRoll: (roll: number | null) => void;
+  setGesturePitch: (pitch: number | null) => void;
   setGestureFistClosed: (closed: boolean) => void;
   smoothedGesture: {
     gesture: GestureType;
     yaw: number | null;
     roll: number | null;
+    pitch: number | null;
     isFistClosed: boolean;
   };
   currentGesture: GestureType;
@@ -71,6 +73,7 @@ export function SandboxUI({
   setCurrentGesture,
   setGestureYaw,
   setGestureRoll,
+  setGesturePitch,
   setGestureFistClosed,
   smoothedGesture,
   currentGesture,
@@ -264,9 +267,10 @@ export function SandboxUI({
           <div className="mt-2 flex flex-col gap-2">
             <GestureDetector
               onGestureChange={setCurrentGesture}
-              onOrientationChange={(yaw, roll) => {
+              onOrientationChange={(yaw, roll, pitch) => {
                 setGestureYaw(yaw);
                 setGestureRoll(roll);
+                setGesturePitch(pitch);
               }}
               onFistChange={setGestureFistClosed}
             />

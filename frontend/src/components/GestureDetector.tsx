@@ -7,7 +7,7 @@ type GestureType = "ZOOM OUT" | "ZOOM IN" | "UP" | "DOWN" | "LEFT" | "RIGHT" | "
 
 interface GestureDetectorProps {
   onGestureChange?: (gesture: GestureType) => void;
-  onOrientationChange?: (yaw: number | null, roll: number | null) => void;
+  onOrientationChange?: (yaw: number | null, roll: number | null, pitch: number | null) => void;
   onFistChange?: (isFistClosed: boolean) => void;
 }
 
@@ -23,8 +23,14 @@ export default function GestureDetector({
   const [currentGesture, setCurrentGesture] = useState<GestureType>("UNKNOWN");
   const [yaw, setYaw] = useState<number | null>(null);
   const [roll, setRoll] = useState<number | null>(null);
+  const [pitch, setPitch] = useState<number | null>(null);
   const [isFistClosed, setIsFistClosed] = useState(false);
   const animationFrameRef = useRef<number>(0);
+  
+  // Track pitch rotation based on vertical wrist movement (like gesture.py)
+  const pitchRotationRef = useRef<number>(0);
+  const prevWristYRef = useRef<number | null>(null);
+  const fistWasClosedRef = useRef<boolean>(false);
 
   // Initialize MediaPipe HandLandmarker
   useEffect(() => {
@@ -367,9 +373,9 @@ export default function GestureDetector({
 
   useEffect(() => {
     if (onOrientationChange) {
-      onOrientationChange(yaw, roll);
+      onOrientationChange(yaw, roll, pitch);
     }
-  }, [yaw, roll, onOrientationChange]);
+  }, [yaw, roll, pitch, onOrientationChange]);
 
   useEffect(() => {
     if (onFistChange) {
@@ -421,6 +427,33 @@ export default function GestureDetector({
           const fistClosed = isFistClosedCheck(landmarks);
           setIsFistClosed(fistClosed);
           
+          // Calculate pitch rotation based on vertical wrist movement (like gesture.py lines 221-230)
+          const wrist = landmarks[0];
+          const sensitivity = 360; // Same as Python
+          
+          if (fistClosed) {
+            if (!fistWasClosedRef.current) {
+              // Fist just closed - initialize tracking
+              prevWristYRef.current = wrist.y;
+              fistWasClosedRef.current = true;
+            }
+            
+            // Calculate delta from previous frame
+            if (prevWristYRef.current !== null) {
+              const currentY = wrist.y;
+              const dy = currentY - prevWristYRef.current; // positive if moving down
+              pitchRotationRef.current += dy * sensitivity;
+              pitchRotationRef.current = normalizeAngle(pitchRotationRef.current);
+              prevWristYRef.current = currentY;
+            }
+            
+            setPitch(pitchRotationRef.current);
+          } else {
+            // Fist opened - stop tracking but DON'T reset pitch rotation
+            fistWasClosedRef.current = false;
+            prevWristYRef.current = null;
+          }
+          
           let displayText = "";
           
           // First priority: Check for two-finger pointing gesture
@@ -447,7 +480,7 @@ export default function GestureDetector({
               if (orientation) {
                 setYaw(orientation.yaw);
                 setRoll(orientation.roll);
-                displayText = `Y:${orientation.yaw.toFixed(1)}° R:${orientation.roll.toFixed(1)}°`;
+                displayText = `P:${pitchRotationRef.current.toFixed(1)}° Y:${orientation.yaw.toFixed(1)}° R:${orientation.roll.toFixed(1)}°`;
                 setCurrentGesture("UNKNOWN");
               }
             }

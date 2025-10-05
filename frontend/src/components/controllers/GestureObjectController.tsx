@@ -9,6 +9,7 @@ interface GestureObjectControllerProps {
   gesture: GestureType;
   yaw: number | null;
   roll: number | null;
+  pitch: number | null;
   isFistClosed: boolean;
   bounds: THREE.Box3;
   scaleEnabled: boolean;
@@ -19,7 +20,8 @@ export function GestureObjectController({
   selectedObject,
   gesture, 
   yaw, 
-  roll, 
+  roll,
+  pitch,
   isFistClosed,
   bounds,
   scaleEnabled,
@@ -27,6 +29,7 @@ export function GestureObjectController({
 }: GestureObjectControllerProps) {
   const lastYawRef = useRef<number | null>(null);
   const lastRollRef = useRef<number | null>(null);
+  const lastPitchRef = useRef<number | null>(null);
   
   useFrame((state, delta) => {
     // Slower, more precise control
@@ -88,11 +91,13 @@ export function GestureObjectController({
       }
     }
     
-    // Fist rotation - rotate the object based on yaw and roll
-    if (isFistClosed && yaw !== null && roll !== null) {
-      if (lastYawRef.current !== null && lastRollRef.current !== null) {
+    // Fist rotation - rotate the object based on yaw, roll, and pitch
+    // CRITICAL: Like gesture.py, we DON'T reset refs when fist opens - rotation accumulates!
+    if (isFistClosed && yaw !== null && roll !== null && pitch !== null) {
+      if (lastYawRef.current !== null && lastRollRef.current !== null && lastPitchRef.current !== null) {
         const yawDelta = yaw - lastYawRef.current;
         const rollDelta = roll - lastRollRef.current;
+        const pitchDelta = pitch - lastPitchRef.current;
         
         // Dead zone - ignore small movements
         const deadZone = 2;
@@ -112,14 +117,24 @@ export function GestureObjectController({
             THREE.MathUtils.degToRad(clampedRollDelta * rotateSpeed)
           );
         }
+        
+        if (Math.abs(pitchDelta) > deadZone) {
+          const clampedPitchDelta = THREE.MathUtils.clamp(pitchDelta, -15, 15);
+          selectedObject.rotateOnWorldAxis(
+            new THREE.Vector3(0, 0, 1), 
+            THREE.MathUtils.degToRad(clampedPitchDelta * rotateSpeed)
+          );
+        }
       }
       
+      // Update refs when fist is closed
       lastYawRef.current = yaw;
       lastRollRef.current = roll;
-    } else {
-      lastYawRef.current = null;
-      lastRollRef.current = null;
+      lastPitchRef.current = pitch;
     }
+    // KEY FIX: When fist opens, we DON'T reset the refs!
+    // This allows rotation to accumulate across multiple fist gestures,
+    // just like pitch_rotation in gesture.py
     
     // Clamp position to bounds
     selectedObject.position.clamp(bounds.min, bounds.max);
