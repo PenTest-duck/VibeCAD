@@ -5,19 +5,22 @@ import { GestureType } from "@/components/GestureDetector";
 
 interface GestureCameraControllerProps {
   gesture: GestureType;
+  pitch: number | null;
   yaw: number | null;
   roll: number | null;
   isFistClosed: boolean;
 }
 
 export function GestureCameraController({ 
-  gesture, 
+  gesture,
+  pitch, 
   yaw, 
   roll, 
   isFistClosed 
 }: GestureCameraControllerProps) {
   const { camera } = useThree();
   const targetRef = useRef(new THREE.Vector3(0, 0, 0));
+  const lastPitchRef = useRef<number | null>(null);
   const lastYawRef = useRef<number | null>(null);
   const lastRollRef = useRef<number | null>(null);
   
@@ -63,37 +66,89 @@ export function GestureCameraController({
       }
     }
     
-    // Fist rotation - orbit camera around target
-    if (isFistClosed && yaw !== null && roll !== null) {
-      if (lastYawRef.current !== null && lastRollRef.current !== null) {
-        const yawDelta = yaw - lastYawRef.current;
-        const rollDelta = roll - lastRollRef.current;
+    // Fist rotation - orbit camera around target using pitch, yaw, and roll
+    // Only rotate on ONE axis at a time - the one with the largest change
+    if (isFistClosed && pitch !== null && yaw !== null && roll !== null) {
+      if (lastPitchRef.current !== null && lastYawRef.current !== null && lastRollRef.current !== null) {
+        const pitchDelta = pitch - lastPitchRef.current; // Hand tilting up/down
+        const yawDelta = yaw - lastYawRef.current; // Wrist turning horizontally
+        const rollDelta = roll - lastRollRef.current; // Fist rotating clockwise/counterclockwise
         
-        // Dead zone - ignore small movements
-        const deadZone = 2;
+        // Adjusted dead zones for each axis (pitch needs lower threshold)
+        const pitchDeadZone = 1.5; // Lower for pitch sensitivity
+        const yawDeadZone = 2.5;   // Higher to distinguish from roll
+        const rollDeadZone = 2.0;  // Medium for roll
         
-        if (Math.abs(yawDelta) > deadZone) {
-          // Orbit around Y axis (yaw)
-          const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
-          const clampedYawDelta = THREE.MathUtils.clamp(yawDelta, -15, 15);
-          const quaternion = new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 1, 0), 
-            THREE.MathUtils.degToRad(clampedYawDelta * rotateSpeed)
-          );
-          offset.applyQuaternion(quaternion);
-          camera.position.copy(targetRef.current).add(offset);
+        // Find which axis has the largest change
+        const absPitch = Math.abs(pitchDelta);
+        const absYaw = Math.abs(yawDelta);
+        const absRoll = Math.abs(rollDelta);
+        const maxDelta = Math.max(absPitch, absYaw, absRoll);
+        
+        // Different dominance requirements for different axes
+        let shouldRotate = false;
+        let rotationAxis: 'pitch' | 'yaw' | 'roll' | null = null;
+        
+        if (absPitch === maxDelta && absPitch > pitchDeadZone) {
+          // Pitch: needs to be 1.3x larger than others (more sensitive)
+          if (absPitch > absYaw * 1.3 && absPitch > absRoll * 1.3) {
+            shouldRotate = true;
+            rotationAxis = 'pitch';
+          }
+        } else if (absYaw === maxDelta && absYaw > yawDeadZone) {
+          // Yaw: needs to be 1.8x larger than roll (stronger separation from roll)
+          if (absYaw > absPitch * 1.4 && absYaw > absRoll * 1.8) {
+            shouldRotate = true;
+            rotationAxis = 'yaw';
+          }
+        } else if (absRoll === maxDelta && absRoll > rollDeadZone) {
+          // Roll: needs to be 1.6x larger than yaw (distinguish from wrist turning)
+          if (absRoll > absPitch * 1.4 && absRoll > absYaw * 1.6) {
+            shouldRotate = true;
+            rotationAxis = 'roll';
+          }
         }
         
-        if (Math.abs(rollDelta) > deadZone) {
-          // Adjust height based on roll
-          const clampedRollDelta = THREE.MathUtils.clamp(rollDelta, -15, 15);
-          camera.position.y += clampedRollDelta * rotateSpeed * 0.3;
+        if (shouldRotate && rotationAxis) {
+          if (rotationAxis === 'pitch') {
+            // Pitch - orbit around Z axis (hand tilting up/down)
+            const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
+            const clampedPitchDelta = THREE.MathUtils.clamp(pitchDelta, -15, 15);
+            const quaternion = new THREE.Quaternion().setFromAxisAngle(
+              new THREE.Vector3(0, 0, 1), 
+              THREE.MathUtils.degToRad(clampedPitchDelta * 0.9)
+            );
+            offset.applyQuaternion(quaternion);
+            camera.position.copy(targetRef.current).add(offset);
+          } else if (rotationAxis === 'yaw') {
+            // Yaw - orbit around Y axis (wrist turning horizontally)
+            const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
+            const clampedYawDelta = THREE.MathUtils.clamp(yawDelta, -15, 15);
+            const quaternion = new THREE.Quaternion().setFromAxisAngle(
+              new THREE.Vector3(0, 1, 0), 
+              THREE.MathUtils.degToRad(clampedYawDelta * 0.9)
+            );
+            offset.applyQuaternion(quaternion);
+            camera.position.copy(targetRef.current).add(offset);
+          } else if (rotationAxis === 'roll') {
+            // Roll - orbit around X axis (fist rotating clockwise/counterclockwise)
+            const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
+            const clampedRollDelta = THREE.MathUtils.clamp(rollDelta, -15, 15);
+            const quaternion = new THREE.Quaternion().setFromAxisAngle(
+              new THREE.Vector3(1, 0, 0), 
+              THREE.MathUtils.degToRad(clampedRollDelta * 0.9)
+            );
+            offset.applyQuaternion(quaternion);
+            camera.position.copy(targetRef.current).add(offset);
+          }
         }
       }
       
+      lastPitchRef.current = pitch;
       lastYawRef.current = yaw;
       lastRollRef.current = roll;
     } else {
+      lastPitchRef.current = null;
       lastYawRef.current = null;
       lastRollRef.current = null;
     }

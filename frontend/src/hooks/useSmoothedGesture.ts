@@ -3,6 +3,7 @@ import { GestureType } from "@/components/GestureDetector";
 
 export function useSmoothedGesture(
   gesture: GestureType,
+  pitch: number | null,
   yaw: number | null,
   roll: number | null,
   isFistClosed: boolean,
@@ -14,6 +15,7 @@ export function useSmoothedGesture(
   const unknownCountRef = useRef(0);
   const sameGestureCountRef = useRef(0);
   const [smoothedGesture, setSmoothedGesture] = useState<GestureType>("UNKNOWN");
+  const [smoothedPitch, setSmoothedPitch] = useState<number | null>(null);
   const [smoothedYaw, setSmoothedYaw] = useState<number | null>(null);
   const [smoothedRoll, setSmoothedRoll] = useState<number | null>(null);
 
@@ -74,6 +76,22 @@ export function useSmoothedGesture(
     lastGestureRef.current = gesture;
   }, [gesture, smoothingFrames]);
 
+  // Minimal smoothing for pitch - almost direct pass-through
+  useEffect(() => {
+    if (pitch !== null && !isNaN(pitch) && isFinite(pitch)) {
+      if (smoothedPitch === null) {
+        // First value, use directly
+        setSmoothedPitch(pitch);
+      } else {
+        // Very light smoothing - 70% new value, 30% old
+        const smoothed = pitch * 0.7 + smoothedPitch * 0.3;
+        setSmoothedPitch(smoothed);
+      }
+    } else {
+      setSmoothedPitch(null);
+    }
+  }, [pitch]);
+
   // Minimal smoothing for yaw - almost direct pass-through
   useEffect(() => {
     if (yaw !== null && !isNaN(yaw) && isFinite(yaw)) {
@@ -108,6 +126,7 @@ export function useSmoothedGesture(
 
   return {
     gesture: smoothedGesture,
+    pitch: smoothedPitch,
     yaw: smoothedYaw,
     roll: smoothedRoll,
     isFistClosed

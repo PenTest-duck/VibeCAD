@@ -73,7 +73,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  // Apply smoothing to gesture values
+    // Apply smoothing to gesture values
   const smoothedGesture = useSmoothedGesture(
     currentGesture,
     gesturePitch,
@@ -342,6 +342,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         movementPlane={movementPlane}
         setMovementPlane={setMovementPlane}
         setCurrentGesture={setCurrentGesture}
+        setGesturePitch={setGesturePitch}
         setGestureYaw={setGestureYaw}
         setGestureRoll={setGestureRoll}
         setGestureFistClosed={setGestureFistClosed}
