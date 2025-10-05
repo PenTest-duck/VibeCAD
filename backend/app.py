@@ -2,7 +2,7 @@ import os
 import time
 from fastapi import FastAPI, HTTPException, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
 from google import genai
 from pydantic import BaseModel
 import io
@@ -10,19 +10,22 @@ import requests
 import subprocess
 import uuid
 import os
+from supabase import create_client
 from textwrap import dedent
 from dotenv import load_dotenv
 load_dotenv()
 
-# MESHY_HEADERS = {
-#     "Authorization": f"Bearer {os.getenv('MESHY_API_KEY')}"
-# }
+import tempfile
 
 app = FastAPI()
 client = genai.Client()
+supabase = create_client(
+    supabase_url=os.getenv("SUPABASE_URL"),
+    supabase_key=os.getenv("SUPABASE_KEY"),
+)
 
-app.mount("/stl", StaticFiles(directory="stl"), name="stl")
-app.mount("/scad", StaticFiles(directory="scad"), name="scad")
+# Files are now stored in Supabase storage (bucket: vibecad) under
+# folders: stl/ and scad/. We expose dynamic routes below instead of static mounts.
 
 app.add_middleware(
     CORSMiddleware,
@@ -73,9 +76,19 @@ async def generate(image: UploadFile = File(...)) -> GenerateResponse:
     # Convert SCAD to STL
     model_id = str(uuid.uuid4())
     print(f"Converting SCAD to STL... {model_id}")
-    with open(f"scad/{model_id}.scad", "w") as f:
-        f.write(scad_code)
-    subprocess.run(args=["openscad", "-o", f"stl/{model_id}.stl", f"scad/{model_id}.scad"], check=True)
+    # Use temporary files for OpenSCAD, then upload results to Supabase
+    with tempfile.TemporaryDirectory() as tmpdir:
+        scad_path = os.path.join(tmpdir, f"{model_id}.scad")
+        stl_path = os.path.join(tmpdir, f"{model_id}.stl")
+        with open(scad_path, "w", encoding="utf-8") as f:
+            f.write(scad_code)
+        subprocess.run(args=["openscad", "-o", stl_path, scad_path], check=True)
+
+        # Upload SCAD and STL to Supabase storage
+        storage = supabase.storage.from_("vibecad")
+        storage.upload(path=f"scad/{model_id}.scad", file=scad_code.encode("utf-8"))
+        with open(stl_path, "rb") as f:
+            storage.upload(path=f"stl/{model_id}.stl", file=f.read())
 
     # # Convert STL to GLB
     # print("Converting STL to GLB...")
@@ -125,11 +138,13 @@ class EditRequest(BaseModel):
 
 @app.post("/edit")
 async def edit(request: EditRequest):
-    if not os.path.exists(f"scad/{request.model_id}.scad"):
+    # Fetch current SCAD from Supabase
+    storage = supabase.storage.from_("vibecad")
+    try:
+        scad_bytes = storage.download(path=f"scad/{request.model_id}.scad")
+    except Exception:
         raise HTTPException(status_code=404, detail="Model not found")
-    
-    with open(f"scad/{request.model_id}.scad", "r") as f:
-        scad_code = f.read()
+    scad_code = scad_bytes.decode("utf-8")
     
     print("Editing SCAD code...")
     response = client.models.generate_content(
@@ -157,8 +172,40 @@ Surround your SCAD code with ```scad and ```.
         scad_code = scad_code[:-3].rstrip()
 
     print("Converting SCAD to STL...")
-    with open(f"scad/{request.model_id}.scad", "w") as f:
-        f.write(scad_code)
-    subprocess.run(args=["openscad", "-o", f"stl/{request.model_id}.stl", f"scad/{request.model_id}.scad"], check=True)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        scad_path = os.path.join(tmpdir, f"{request.model_id}.scad")
+        stl_path = os.path.join(tmpdir, f"{request.model_id}.stl")
+        with open(scad_path, "w", encoding="utf-8") as f:
+            f.write(scad_code)
+        subprocess.run(args=["openscad", "-o", stl_path, scad_path], check=True)
+
+        # Upload updated SCAD and STL
+        storage.upload(path=f"scad/{request.model_id}.scad", file=scad_code.encode("utf-8"))
+        with open(stl_path, "rb") as f:
+            storage.upload(path=f"stl/{request.model_id}.stl", file=f.read())
 
     print(f"Done! Model ID: {request.model_id}")
+
+
+@app.get("/stl/{filename}")
+async def get_stl_file(filename: str):
+    # Stream STL from Supabase
+    storage = supabase.storage.from_("vibecad")
+    path = f"stl/{filename}"
+    try:
+        data = storage.download(path=path)
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found")
+    return StreamingResponse(io.BytesIO(data), media_type="application/octet-stream")
+
+
+@app.get("/scad/{filename}")
+async def get_scad_file(filename: str):
+    # Stream SCAD from Supabase
+    storage = supabase.storage.from_("vibecad")
+    path = f"scad/{filename}"
+    try:
+        data = storage.download(path=path)
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found")
+    return StreamingResponse(io.BytesIO(data), media_type="text/plain; charset=utf-8")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -29,18 +29,18 @@ interface SpeechRecognition extends EventTarget {
   start(): void;
   stop(): void;
   abort(): void;
-  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
-  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+  onstart: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => void) | null;
 }
 
-declare var SpeechRecognition: {
+declare const SpeechRecognition: {
   prototype: SpeechRecognition;
   new(): SpeechRecognition;
 };
 
-declare var webkitSpeechRecognition: {
+declare const webkitSpeechRecognition: {
   prototype: SpeechRecognition;
   new(): SpeechRecognition;
 };
@@ -55,28 +55,9 @@ export default function SpeechPage() {
   
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  useEffect(() => {
-    // Check if Speech Recognition is supported
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      setIsSupported(true);
-      initializeRecognition();
-    } else {
-      setIsSupported(false);
-      setError("Speech Recognition is not supported in this browser. Please use Chrome, Edge, or Safari.");
-    }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
-  }, []);
-
-  const initializeRecognition = () => {
+  const initializeRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
-    
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = language;
@@ -118,13 +99,31 @@ export default function SpeechPage() {
     };
 
     recognitionRef.current = recognition;
-  };
+  }, [language]);
+
+  useEffect(() => {
+    // Check if Speech Recognition is supported
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setIsSupported(true);
+      initializeRecognition();
+    } else {
+      setIsSupported(false);
+      setError("Speech Recognition is not supported in this browser. Please use Chrome, Edge, or Safari.");
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, [initializeRecognition]);
 
   const startListening = () => {
     if (recognitionRef.current && !isListening) {
       try {
         recognitionRef.current.start();
-      } catch (err) {
+      } catch {
         setError("Failed to start speech recognition. Please try again.");
       }
     }
@@ -156,7 +155,7 @@ export default function SpeechPage() {
           <CardHeader>
             <CardTitle className="text-center">Speech Recognition Not Supported</CardTitle>
             <CardDescription className="text-center">
-              Your browser doesn't support the Web Speech API. Please use Chrome, Edge, or Safari for the best experience.
+              Your browser doesn&apos;t support the Web Speech API. Please use Chrome, Edge, or Safari for the best experience.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -302,12 +301,12 @@ export default function SpeechPage() {
           </CardHeader>
           <CardContent>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li>• Make sure your microphone is working and you've granted permission</li>
-              <li>• Click "Start" to begin listening to your voice</li>
+              <li>• Make sure your microphone is working and you&apos;ve granted permission</li>
+              <li>• Click &quot;Start&quot; to begin listening to your voice</li>
               <li>• Speak clearly and at a normal pace</li>
               <li>• The text will appear in real-time as you speak</li>
-              <li>• Click "Stop" when you're done speaking</li>
-              <li>• Use "Clear" to reset the transcription</li>
+              <li>• Click &quot;Stop&quot; when you&apos;re done speaking</li>
+              <li>• Use &quot;Clear&quot; to reset the transcription</li>
             </ul>
           </CardContent>
         </Card>
