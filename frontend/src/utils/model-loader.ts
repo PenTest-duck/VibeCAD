@@ -69,14 +69,18 @@ export async function loadModelFromFile(file: File): Promise<THREE.Object3D> {
   }
 }
 
-export async function loadModelById(modelId: string): Promise<THREE.Object3D> {
+export async function loadModelById(modelId: string, bustCache: boolean = false): Promise<THREE.Object3D> {
   try {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
     if (!backendUrl) {
       throw new Error('NEXT_PUBLIC_BACKEND_URL environment variable is not set');
     }
     
-    const response = await fetch(`${backendUrl}/stl/${modelId}.stl`);
+    const url = bustCache 
+      ? `${backendUrl}/stl/${modelId}.stl?t=${Date.now()}`
+      : `${backendUrl}/stl/${modelId}.stl`;
+    
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Failed to load model: ${response.statusText}`);
     }

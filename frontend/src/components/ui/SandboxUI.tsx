@@ -47,6 +47,7 @@ interface SandboxUIProps {
   setVoiceEnabled: (enabled: boolean) => void;
   currentTranscript: string;
   finalTranscript: string;
+  isEditingCAD: boolean;
   
   // UI state
   showCameraHint: boolean;
@@ -82,6 +83,7 @@ export function SandboxUI({
   currentTranscript,
   finalTranscript,
   showCameraHint,
+  isEditingCAD,
 }: SandboxUIProps) {
   return (
     <>
@@ -163,20 +165,29 @@ export function SandboxUI({
       {/* Bottom Right Controls */}
       <div className="pointer-events-auto absolute right-4 bottom-4 z-10 flex flex-col gap-2 items-end">
         {/* Voice Transcript Display */}
-        {voiceEnabled && (currentTranscript || finalTranscript) && (
+        {(isEditingCAD || (voiceEnabled && (currentTranscript || finalTranscript))) && (
           <div className="rounded-lg bg-neutral-900/90 backdrop-blur-md px-4 py-3 text-sm text-neutral-100 shadow-lg border border-neutral-700/50 max-w-md">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-xs text-neutral-400">Listening:</span>
-            </div>
-            <div className="mt-1">
-              {finalTranscript && (
-                <div className="text-neutral-200">{finalTranscript}</div>
-              )}
-              {currentTranscript && (
-                <div className="italic text-neutral-300">{currentTranscript}</div>
-              )}
-            </div>
+            {isEditingCAD ? (
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-neutral-300">Editing CAD model...</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-xs text-neutral-400">Listening:</span>
+                </div>
+                <div className="mt-1">
+                  {finalTranscript && (
+                    <div className="text-neutral-200">{finalTranscript}</div>
+                  )}
+                  {currentTranscript && (
+                    <div className="italic text-neutral-300">{currentTranscript}</div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
         

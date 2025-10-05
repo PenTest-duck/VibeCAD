@@ -74,6 +74,8 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   const [currentTranscript, setCurrentTranscript] = useState("");
   const [finalTranscript, setFinalTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [isEditingCAD, setIsEditingCAD] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
     // Apply smoothing to gesture values
@@ -101,16 +103,71 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
       try {
         // Call editCAD if we have a modelId
         if (modelId) {
+          setIsEditingCAD(true);
           await editCAD(modelId, utterance);
           console.log("CAD edit command sent:", utterance);
+          
+          // Reload the model after editing
+          try {
+            const updatedObject = await loadModelById(modelId, true);
+            
+            // Prepare the object for the scene
+            updatedObject.traverse((c: THREE.Object3D) => {
+              if (c instanceof THREE.Mesh) {
+                c.castShadow = true; 
+                c.receiveShadow = true;
+              }
+            });
+            
+            // Normalize initial placement: center on ground
+            const box = new THREE.Box3().setFromObject(updatedObject);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const center = new THREE.Vector3();
+            box.getCenter(center);
+            
+            // Move object so its center is at world origin
+            updatedObject.position.sub(center);
+            
+            // Auto-scale to fit within bounds
+            const boundsSize = new THREE.Vector3();
+            bounds.getSize(boundsSize);
+            const maxBoundsDimension = Math.min(boundsSize.x, boundsSize.y, boundsSize.z) * 0.8;
+            const maxModelDimension = Math.max(size.x, size.y, size.z);
+            
+            if (maxModelDimension > maxBoundsDimension) {
+              const scaleFactor = maxBoundsDimension / maxModelDimension;
+              updatedObject.scale.setScalar(scaleFactor);
+              const scaledBox = new THREE.Box3().setFromObject(updatedObject);
+              scaledBox.getSize(size);
+            }
+            
+            // Position object on the ground plane
+            updatedObject.position.y = size.y * 0.5;
+            updatedObject.position.x = 0;
+            updatedObject.position.z = 0;
+            
+            // Update items - remove old and add new
+            setItems((prev) => {
+              const filtered = prev.filter((item) => !item.id.includes(`Model-${modelId}`));
+              return [...filtered, { id: uid("asset"), name: `Model-${modelId}`, object: updatedObject }];
+            });
+            
+            // Trigger SCAD editor refresh
+            setRefreshKey((prev) => prev + 1);
+          } catch (reloadError) {
+            console.error("Failed to reload model after editing:", reloadError);
+          }
         } else {
           console.log("No modelId available for CAD editing");
         }
       } catch (error) {
         console.error("Failed to edit CAD:", error);
+      } finally {
+        setIsEditingCAD(false);
       }
     }
-  }, [modelId]);
+  }, [modelId, bounds]);
   
   // Initialize speech recognition
   useEffect(() => {
@@ -158,6 +215,8 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         }
         
         if (finalTranscript) {
+          // Turn voice off while processing the final sentence
+          setVoiceEnabled(false);
           handleUtterance(finalTranscript.trim());
           setFinalTranscript(finalTranscript.trim());
           setCurrentTranscript("");
@@ -339,6 +398,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         modelId={modelId}
         isOpen={isEditorOpen}
         onToggle={() => setIsEditorOpen(!isEditorOpen)}
+        refreshKey={refreshKey}
       />
 
       {/* UI Overlay */}
@@ -372,6 +432,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         currentTranscript={currentTranscript}
         finalTranscript={finalTranscript}
         showCameraHint={showCameraHint}
+        isEditingCAD={isEditingCAD}
       />
 
       {/* Drag & drop hint */}

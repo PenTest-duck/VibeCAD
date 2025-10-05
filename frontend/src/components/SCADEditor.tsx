@@ -8,14 +8,15 @@ interface SCADEditorProps {
   modelId?: string | null;
   isOpen: boolean;
   onToggle: () => void;
+  refreshKey?: number;
 }
 
-export default function SCADEditor({ modelId, isOpen, onToggle }: SCADEditorProps) {
+export default function SCADEditor({ modelId, isOpen, onToggle, refreshKey }: SCADEditorProps) {
   const [scadCode, setScadCode] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch SCAD code when modelId changes
+  // Fetch SCAD code when modelId or refreshKey changes
   useEffect(() => {
     if (!modelId) {
       setScadCode("");
@@ -27,7 +28,7 @@ export default function SCADEditor({ modelId, isOpen, onToggle }: SCADEditorProp
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/scad/${modelId}.scad`);
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/scad/${modelId}.scad?t=${Date.now()}`);
         if (!response.ok) {
           throw new Error(`Failed to fetch SCAD code: ${response.statusText}`);
         }
@@ -43,7 +44,7 @@ export default function SCADEditor({ modelId, isOpen, onToggle }: SCADEditorProp
     };
 
     fetchScadCode();
-  }, [modelId]);
+  }, [modelId, refreshKey]);
 
   const handleEditorChange = (value: string | undefined) => {
     if (value !== undefined) {
