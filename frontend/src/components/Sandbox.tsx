@@ -642,6 +642,13 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   const [gestureEnabled, setGestureEnabled] = useState(false);
   const [gestureScaleEnabled, setGestureScaleEnabled] = useState(false); // Toggle for zoom/scale gestures
   const [movementPlane, setMovementPlane] = useState<"XZ" | "XY" | "YZ">("XZ"); // Which plane to move on
+  
+  // Voice control state
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [currentTranscript, setCurrentTranscript] = useState("");
+  const [finalTranscript, setFinalTranscript] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Apply smoothing/debouncing to gesture values with persistence during tracking loss
   const smoothedGesture = useSmoothedGesture(
