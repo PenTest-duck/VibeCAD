@@ -7,7 +7,7 @@ import { MapControls, TransformControls, Html, useCursor, GizmoHelper, GizmoView
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import GestureDetectorCompact, { GestureType } from "./GestureDetectorCompact";
+import GestureDetector, { GestureType } from "./GestureDetector";
 
 // Speech Recognition types
 declare global {
@@ -1003,7 +1003,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         {/* Gesture Detector - only show when enabled */}
         {gestureEnabled && (
           <div className="mt-2 flex flex-col gap-2">
-            <GestureDetectorCompact
+            <GestureDetector
               onGestureChange={setCurrentGesture}
               onOrientationChange={(yaw, roll) => {
                 setGestureYaw(yaw);

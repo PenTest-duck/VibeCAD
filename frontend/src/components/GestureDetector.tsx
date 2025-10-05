@@ -68,7 +68,7 @@ export default function GestureDetector({
     const startWebcam = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 1280, height: 720 }
+          video: { width: 640, height: 480 }
         });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -88,19 +88,19 @@ export default function GestureDetector({
     };
   }, []);
 
-  // Gesture detection functions (migrated from Python)
-  
+  // Gesture detection functions
   const distance = (p1: NormalizedLandmark, p2: NormalizedLandmark): number => {
     return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
   };
 
   const normalizeAngle = (angle: number): number => {
-    // Normalize any angle (degrees) to the range (-180, 180]
+    /**
+     * Normalize any angle (degrees) to the range (-180, 180].
+     */
     return ((angle + 180) % 360) - 180;
   };
 
   const crossProduct = (v1: number[], v2: number[]): number[] => {
-    // Calculate cross product of two 3D vectors
     return [
       v1[1] * v2[2] - v1[2] * v2[1],
       v1[2] * v2[0] - v1[0] * v2[2],
@@ -109,20 +109,22 @@ export default function GestureDetector({
   };
 
   const normalize3D = (v: number[]): number[] => {
-    // Normalize a 3D vector
     const norm = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
     return [v[0] / (norm + 1e-6), v[1] / (norm + 1e-6), v[2] / (norm + 1e-6)];
   };
 
   const getHandOrientation = (landmarks: NormalizedLandmark[]): { yaw: number; roll: number } | null => {
-    // Estimates hand orientation (yaw, roll) in degrees using MediaPipe landmarks
+    /**
+     * Estimates hand orientation (yaw, roll) in degrees using MediaPipe landmarks.
+     * Returns {yaw, roll}
+     */
     // Key landmarks for palm plane
     const wrist = landmarks[0];
     const indexMcp = landmarks[5];
     const pinkyMcp = landmarks[17];
     const middleMcp = landmarks[9];
 
-    // Convert to 3D arrays
+    // Convert to arrays (3D coordinates)
     const w = [wrist.x, wrist.y, wrist.z || 0];
     const i = [indexMcp.x, indexMcp.y, indexMcp.z || 0];
     const p = [pinkyMcp.x, pinkyMcp.y, pinkyMcp.z || 0];
@@ -138,9 +140,10 @@ export default function GestureDetector({
     const normalizedForward = normalize3D(forward);
 
     // Compute orientation angles
-    const yaw = (Math.atan2(normal[0], normal[2]) * 180) / Math.PI;
-    const roll = (Math.atan2(normalizedForward[1], normalizedForward[0]) * 180) / Math.PI;
+    const yaw = (Math.atan2(normal[0], normal[2]) * 180) / Math.PI;  // left/right rotation
+    const roll = (Math.atan2(normalizedForward[1], normalizedForward[0]) * 180) / Math.PI;  // twist
 
+    // Return angles
     return {
       yaw,
       roll: normalizeAngle(roll + 100)
@@ -153,6 +156,11 @@ export default function GestureDetector({
     mcp: NormalizedLandmark,
     threshold: number = 0.7
   ): boolean => {
+    /**
+     * Determines if a finger is extended based on the cosine of the angle
+     * between MCP→PIP and PIP→TIP.
+     * Returns true if the finger is mostly straight.
+     */
     // Vectors
     const v1 = [pip.x - mcp.x, pip.y - mcp.y];
     const v2 = [tip.x - pip.x, tip.y - pip.y];
@@ -162,12 +170,16 @@ export default function GestureDetector({
     const norm1 = Math.sqrt(v1[0] ** 2 + v1[1] ** 2);
     const norm2 = Math.sqrt(v2[0] ** 2 + v2[1] ** 2);
 
-    const cosAngle = dot / (norm1 * norm2 + 1e-6); // avoid div by zero
+    const cosAngle = dot / (norm1 * norm2 + 1e-6);  // avoid div by zero
 
-    return cosAngle > threshold; // >0.7 means finger is mostly straight
+    return cosAngle > threshold;  // >0.7 means finger is mostly straight
   };
 
   const fingersUp = (landmarks: NormalizedLandmark[]): number[] => {
+    /**
+     * Returns a list of finger states [index, middle, ring, pinky] using vector method.
+     * 1 = extended, 0 = folded.
+     */
     const tips = [8, 12, 16, 20];
     const pips = [6, 10, 14, 18];
     const mcps = [5, 9, 13, 17];
@@ -184,20 +196,26 @@ export default function GestureDetector({
   };
 
   const isFistClosedCheck = (landmarks: NormalizedLandmark[]): boolean => {
-    // Returns true if all fingers (index, middle, ring, pinky) are folded
+    /**
+     * Returns true if all fingers (index, middle, ring, pinky) are folded.
+     */
     const states = fingersUp(landmarks);
     return states.reduce((sum, val) => sum + val, 0) === 0;
   };
 
   const detectDirection = (landmarks: NormalizedLandmark[]): string => {
+    /**
+     * Returns one of 'UP', 'DOWN', 'LEFT', 'RIGHT' based on
+     * the vector from wrist to index fingertip.
+     * Fully covers 360° with no gaps.
+     */
     const wrist = landmarks[0];
     const indexTip = landmarks[8];
 
-    // Flip dx to account for mirrored display (Python flips frame before processing, we only flip display)
-    const dx = wrist.x - indexTip.x;
-    const dy = wrist.y - indexTip.y; // Invert y for natural coordinate system
+    const dx = indexTip.x - wrist.x;
+    const dy = wrist.y - indexTip.y;  // Invert y for natural coordinate system (y grows downward)
 
-    const angle = (Math.atan2(dy, dx) * 180) / Math.PI; // Angle in degrees (-180 to 180)
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;  // Angle in degrees (-180 to 180)
 
     // Cardinal directions with explicit ranges
     if (angle >= 45 && angle <= 135) {
@@ -206,10 +224,79 @@ export default function GestureDetector({
       return "DOWN";
     } else if (angle > -45 && angle < 45) {
       return "RIGHT";
-    } else {
-      // Covers 135 → 180 and -180 → -135
+    } else {  // Covers 135 → 180 and -180 → -135
       return "LEFT";
     }
+  };
+
+  const detectPointingGesture = (landmarks: NormalizedLandmark[]): boolean => {
+    /**
+     * Determines if the hand is pointing with the index and middle fingers extended.
+     * Returns true if pointing gesture is detected, else false.
+     */
+    const states = fingersUp(landmarks);
+    // Two-finger pointing: index + middle extended, ring + pinky folded
+    return states.join("") === "1100";
+  };
+
+  const drawPointingCursor = (
+    ctx: CanvasRenderingContext2D,
+    landmarks: NormalizedLandmark[],
+    width: number,
+    height: number
+  ): string => {
+    /**
+     * Draws a cursor in the direction between the index and middle fingers 
+     * and returns normalized coordinates as text.
+     */
+    const indexTip = landmarks[8];
+    const middleTip = landmarks[12];
+    const wrist = landmarks[0];
+
+    // Midpoint between index and middle fingertips
+    const tipCenterX = (indexTip.x + middleTip.x) / 2;
+    const tipCenterY = (indexTip.y + middleTip.y) / 2;
+
+    // Direction vector from wrist to tip_center
+    let dirVecX = tipCenterX - wrist.x;
+    let dirVecY = tipCenterY - wrist.y;
+    
+    // Normalize direction vector
+    const dirNorm = Math.sqrt(dirVecX * dirVecX + dirVecY * dirVecY) + 1e-6;
+    dirVecX /= dirNorm;
+    dirVecY /= dirNorm;
+
+    // Convert to pixel coordinates
+    const startX = tipCenterX * width;
+    const startY = tipCenterY * height;
+    
+    // Extend forward by 200 pixels
+    let cursorX = startX + dirVecX * 200;
+    let cursorY = startY + dirVecY * 200;
+    
+    // Clamp to canvas bounds
+    cursorX = Math.max(0, Math.min(width - 1, cursorX));
+    cursorY = Math.max(0, Math.min(height - 1, cursorY));
+
+    // Normalize to [0, 1]
+    const normX = (cursorX / width).toFixed(2);
+    const normY = (1 - cursorY / height).toFixed(2);  // Invert Y for natural coordinates
+
+    // Draw cursor (red circle)
+    ctx.fillStyle = "#FF0000";
+    ctx.beginPath();
+    ctx.arc(cursorX, cursorY, 10, 0, 2 * Math.PI);
+    ctx.fill();
+
+    // Draw direction line (blue)
+    ctx.strokeStyle = "#0000FF";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(cursorX, cursorY);
+    ctx.stroke();
+
+    return `Pointing at (x=${normX}, y=${normY})`;
   };
 
   const detectGesture = (landmarks: NormalizedLandmark[]): GestureType => {
@@ -234,25 +321,23 @@ export default function GestureDetector({
     }
   };
 
-  // Draw hand landmarks on canvas
   const drawHandLandmarks = (
     ctx: CanvasRenderingContext2D,
     landmarks: NormalizedLandmark[],
     width: number,
     height: number
   ) => {
-    // Draw connections
     const connections = [
-      [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
-      [0, 5], [5, 6], [6, 7], [7, 8], // Index
-      [5, 9], [9, 10], [10, 11], [11, 12], // Middle
-      [9, 13], [13, 14], [14, 15], [15, 16], // Ring
-      [13, 17], [17, 18], [18, 19], [19, 20], // Pinky
-      [0, 17] // Palm
+      [0, 1], [1, 2], [2, 3], [3, 4],
+      [0, 5], [5, 6], [6, 7], [7, 8],
+      [5, 9], [9, 10], [10, 11], [11, 12],
+      [9, 13], [13, 14], [14, 15], [15, 16],
+      [13, 17], [17, 18], [18, 19], [19, 20],
+      [0, 17]
     ];
 
     ctx.strokeStyle = "#00FF00";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
 
     connections.forEach(([start, end]) => {
       const startPoint = landmarks[start];
@@ -263,11 +348,10 @@ export default function GestureDetector({
       ctx.stroke();
     });
 
-    // Draw landmarks
     ctx.fillStyle = "#FF0000";
     landmarks.forEach((landmark) => {
       ctx.beginPath();
-      ctx.arc(landmark.x * width, landmark.y * height, 5, 0, 2 * Math.PI);
+      ctx.arc(landmark.x * width, landmark.y * height, 3, 0, 2 * Math.PI);
       ctx.fill();
     });
   };
@@ -312,15 +396,12 @@ export default function GestureDetector({
         return;
       }
 
-      // Set canvas size to match video
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
 
-      // Draw video frame
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Detect hand landmarks
       if (video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;
 
@@ -332,47 +413,60 @@ export default function GestureDetector({
         if (results.landmarks && results.landmarks.length > 0) {
           const landmarks = results.landmarks[0];
           
-          // Draw landmarks
           drawHandLandmarks(ctx, landmarks, canvas.width, canvas.height);
 
-          // Detect gesture
-          const gesture = detectGesture(landmarks);
-          setCurrentGesture(gesture);
-          
-          // Check if fist is closed and get orientation
+          // Match Python's gesture priority (lines 239-246)
           const fistClosed = isFistClosedCheck(landmarks);
           setIsFistClosed(fistClosed);
           
           let displayText = "";
           
-          if (gesture !== "UNKNOWN") {
-            displayText = `Gesture: ${gesture}`;
-            console.log(`Gesture detected: ${gesture}`);
+          // First priority: Check for two-finger pointing gesture
+          if (detectPointingGesture(landmarks)) {
+            // Draw the pointing cursor and get coordinates text
+            displayText = drawPointingCursor(ctx, landmarks, canvas.width, canvas.height);
+            // Set gesture to UNKNOWN since pointing doesn't control camera/object movement directly
+            setCurrentGesture("UNKNOWN");
             setYaw(null);
             setRoll(null);
-          } else if (fistClosed) {
-            // Calculate orientation when fist is closed
-            const orientation = getHandOrientation(landmarks);
-            if (orientation) {
-              setYaw(orientation.yaw);
-              setRoll(orientation.roll);
-              displayText = `Yaw: ${orientation.yaw.toFixed(1)}° | Roll: ${orientation.roll.toFixed(1)}°`;
+          }
+          // Second priority: Check regular gestures (zoom, pinch, single-finger pointing)
+          else {
+            const gesture = detectGesture(landmarks);
+            if (gesture !== "UNKNOWN") {
+              displayText = `Gesture: ${gesture}`;
+              setCurrentGesture(gesture);
+              setYaw(null);
+              setRoll(null);
             }
-          } else {
-            displayText = "Gesture: NONE";
-            setYaw(null);
-            setRoll(null);
+            // Third priority: Show fist orientation
+            else if (fistClosed) {
+              const orientation = getHandOrientation(landmarks);
+              if (orientation) {
+                setYaw(orientation.yaw);
+                setRoll(orientation.roll);
+                displayText = `Y:${orientation.yaw.toFixed(1)}° R:${orientation.roll.toFixed(1)}°`;
+                setCurrentGesture("UNKNOWN");
+              }
+            }
+            // Default: No gesture detected
+            else {
+              displayText = "Gesture: NONE";
+              setCurrentGesture("UNKNOWN");
+              setYaw(null);
+              setRoll(null);
+            }
           }
 
           // Draw text on canvas (unmirrored)
           ctx.save();
-          ctx.scale(-1, 1); // Mirror the text back
-          ctx.font = "bold 36px Arial";
+          ctx.scale(-1, 1);
+          ctx.font = "bold 16px Arial";
           ctx.fillStyle = "#00FF00";
           ctx.strokeStyle = "#000000";
-          ctx.lineWidth = 3;
-          ctx.strokeText(displayText, -canvas.width + 50, 100);
-          ctx.fillText(displayText, -canvas.width + 50, 100);
+          ctx.lineWidth = 2;
+          ctx.strokeText(displayText, -canvas.width + 10, 25);
+          ctx.fillText(displayText, -canvas.width + 10, 25);
           ctx.restore();
         } else {
           setCurrentGesture("UNKNOWN");
@@ -395,71 +489,41 @@ export default function GestureDetector({
   }, [handLandmarker]);
 
   return (
-    <>
+    <div className="relative w-64 h-48 bg-black rounded-lg overflow-hidden shadow-xl border-2 border-neutral-700">
       {isLoading && (
-        <div className="text-white text-center mb-4">
-          Loading MediaPipe Hand Landmarker...
+        <div className="absolute inset-0 flex items-center justify-center text-white text-xs bg-black/80 z-10">
+          Loading...
         </div>
       )}
-
-      <div className="relative w-full max-w-4xl mx-auto bg-black rounded-lg overflow-hidden shadow-2xl">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          className="absolute top-0 left-0 w-full h-full object-cover opacity-0"
-          onLoadedMetadata={(e) => {
-            const video = e.currentTarget;
-            if (canvasRef.current) {
-              canvasRef.current.width = video.videoWidth;
-              canvasRef.current.height = video.videoHeight;
-            }
-          }}
-        />
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full"
-          style={{ transform: "scaleX(-1)" }} // Mirror the video
-        />
-      </div>
-
-      <div className="mt-6 bg-slate-800 rounded-lg p-6 shadow-lg">
-        <h2 className="text-xl font-semibold text-white mb-2">
-          Current Gesture:
-        </h2>
-        <div className={`text-3xl font-bold ${
-          currentGesture === "UNKNOWN" ? "text-slate-400" : "text-green-400"
-        }`}>
-          {currentGesture}
+      
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className="absolute top-0 left-0 w-full h-full object-cover opacity-0"
+        onLoadedMetadata={(e) => {
+          const video = e.currentTarget;
+          if (canvasRef.current) {
+            canvasRef.current.width = video.videoWidth;
+            canvasRef.current.height = video.videoHeight;
+          }
+        }}
+      />
+      <canvas
+        ref={canvasRef}
+        className="w-full h-full"
+        style={{ transform: "scaleX(-1)" }}
+      />
+      
+      {/* Status indicator */}
+      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+        <div className={`text-xs font-bold px-2 py-1 rounded ${
+          currentGesture !== "UNKNOWN" ? "bg-green-600/80" : "bg-neutral-800/80"
+        } text-white`}>
+          {currentGesture !== "UNKNOWN" ? "🎯 Active" : "👋 Show hand"}
         </div>
       </div>
-
-      {/* Orientation display when fist is closed */}
-      {isFistClosed && yaw !== null && roll !== null && (
-        <div className="mt-6 bg-gradient-to-r from-purple-900 to-indigo-900 rounded-lg p-6 shadow-lg border-2 border-purple-500">
-          <h2 className="text-xl font-semibold text-white mb-4">
-            ✊ Fist Detected - Hand Orientation
-          </h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-slate-800/50 rounded-lg p-4">
-              <div className="text-sm text-slate-400 mb-1">Yaw (Left/Right)</div>
-              <div className="text-2xl font-bold text-cyan-400">
-                {yaw.toFixed(1)}°
-              </div>
-            </div>
-            <div className="bg-slate-800/50 rounded-lg p-4">
-              <div className="text-sm text-slate-400 mb-1">Roll (Twist)</div>
-              <div className="text-2xl font-bold text-pink-400">
-                {roll.toFixed(1)}°
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 text-xs text-slate-300">
-            💡 Make a fist and rotate your hand to see orientation changes
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   );
 }
 
