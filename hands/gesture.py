@@ -113,10 +113,10 @@ def normalize_angle(angle):
 
 
 
-def get_hand_orientation(hand_landmarks):
+def get_hand_orientation(hand_landmarks, prev_wrist_y=None, pitch_rotation=0, sensitivity=100):
     """
     Estimates hand orientation (pitch, yaw, roll) in degrees using MediaPipe landmarks.
-    Returns (pitch, yaw, roll) or (None, None, None) if invalid.
+    Returns (yaw, pitch, roll, updated_prev_wrist_y, updated_pitch_rotation)
     """
 
     # Key landmarks for palm plane
@@ -145,6 +145,7 @@ def get_hand_orientation(hand_landmarks):
     yaw   = math.degrees(math.atan2(normal[0], normal[2]))  # left/right rotation
     roll  = math.degrees(math.atan2(forward[1], forward[0]))  # twist
 
+    # Return angles and updated state
     return yaw, normalize_angle(roll+100)
 
 # --- Added for pointing cursor ---
@@ -196,6 +197,9 @@ with mp_hands.Hands(
     min_tracking_confidence=0.5
 ) as hands:
 
+    closed = False
+    pitch_rotation = 0
+
     while cap.isOpened():
         success, frame = cap.read()
         if not success:
@@ -207,6 +211,26 @@ with mp_hands.Hands(
 
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
+                # --- PITCH based on fist vertical movement ---
+                # --- Initialize once at top of script ---
+                wrist = hand_landmarks.landmark[0]
+                sensitivity = 360  # higher to amplify small normalized changes
+
+                # --- Inside your loop ---
+
+                if is_fist_closed(hand_landmarks):
+                    if closed == False:
+                        first_wrist_y = wrist.y  # initialize on fist close
+                        prev_wrist_y = wrist.y
+                    closed = True
+                    current_y = wrist.y
+                    dy = current_y - prev_wrist_y  # positive if moving down
+                    pitch_rotation += dy * sensitivity
+                    pitch_rotation = normalize_angle(pitch_rotation)
+                    prev_wrist_y = current_y  # store current y for next frame
+                else:
+                    closed = False
+
                 mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
                 gesture = detect_gesture(hand_landmarks)
                 yaw, roll = get_hand_orientation(hand_landmarks)
@@ -217,13 +241,13 @@ with mp_hands.Hands(
                 elif gesture != "UNKNOWN":
                     display_text = f"Gesture: {gesture}"
                 elif is_fist_closed(hand_landmarks):
-                    display_text = f"Yaw: {yaw:.1f} degrees, Roll: {roll:.1f} degrees"
+                    display_text = f"Pitch: {pitch_rotation:.1f} degrees, Yaw: {yaw:.1f} degrees, Roll: {roll:.1f} degrees"
                 else:
                     display_text = "Gesture: NONE"
 
 
                 cv2.putText(frame, display_text, (50, 100),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 1)
 
         cv2.imshow("Hand Gesture Recognition", frame)
         if cv2.waitKey(5) & 0xFF == 27:
