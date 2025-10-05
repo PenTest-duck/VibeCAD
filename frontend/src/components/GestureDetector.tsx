@@ -208,11 +208,13 @@ export default function GestureDetector({
      * Returns one of 'UP', 'DOWN', 'LEFT', 'RIGHT' based on
      * the vector from wrist to index fingertip.
      * Fully covers 360° with no gaps.
+     * Note: X is inverted because the video canvas is mirrored (scaleX(-1))
      */
     const wrist = landmarks[0];
     const indexTip = landmarks[8];
 
-    const dx = indexTip.x - wrist.x;
+    // Invert dx to account for mirrored video display
+    const dx = -(indexTip.x - wrist.x);
     const dy = wrist.y - indexTip.y;  // Invert y for natural coordinate system (y grows downward)
 
     const angle = (Math.atan2(dy, dx) * 180) / Math.PI;  // Angle in degrees (-180 to 180)
