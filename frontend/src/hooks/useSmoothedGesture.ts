@@ -7,138 +7,80 @@ export function useSmoothedGesture(
   yaw: number | null,
   roll: number | null,
   isFistClosed: boolean,
-  smoothingFrames: number = 2
+  smoothingFrames: number = 1 // NO BUFFERING - instant response like Inventor
 ) {
   const lastGestureRef = useRef<GestureType>("UNKNOWN");
-  const lastValidGestureRef = useRef<GestureType>("UNKNOWN");
-  const lastValidTimeRef = useRef(Date.now());
-  const unknownCountRef = useRef(0);
-  const sameGestureCountRef = useRef(0);
   const [smoothedGesture, setSmoothedGesture] = useState<GestureType>("UNKNOWN");
+  
+  // Use refs to track smoothed values to avoid infinite loops
+  const smoothedPitchRef = useRef<number | null>(null);
+  const smoothedYawRef = useRef<number | null>(null);
+  const smoothedRollRef = useRef<number | null>(null);
+  
   const [smoothedPitch, setSmoothedPitch] = useState<number | null>(null);
   const [smoothedYaw, setSmoothedYaw] = useState<number | null>(null);
   const [smoothedRoll, setSmoothedRoll] = useState<number | null>(null);
 
   useEffect(() => {
-    const now = Date.now();
-    
-    // Handle UNKNOWN - clear gesture quickly when hand disappears
-    if (gesture === "UNKNOWN") {
-      unknownCountRef.current++;
-      
-      // Special handling for zoom gestures - clear them immediately
-      const isZoomGesture = lastValidGestureRef.current === "ZOOM IN" || lastValidGestureRef.current === "ZOOM OUT";
-      
-      if (isZoomGesture) {
-        // Clear zoom gestures immediately - no persistence
-        lastValidGestureRef.current = "UNKNOWN";
-        setSmoothedGesture("UNKNOWN");
-        sameGestureCountRef.current = 0;
-        return;
-      }
-      
-      // For non-zoom gestures, only persist for 100ms (very brief - just for momentary tracking loss)
-      const timeSinceLastValid = now - lastValidTimeRef.current;
-      if (timeSinceLastValid < 100 && lastValidGestureRef.current !== "UNKNOWN") {
-        // Keep last gesture very briefly during momentary tracking loss
-        setSmoothedGesture(lastValidGestureRef.current);
-        return;
-      } else {
-        // After 100ms or immediately if already UNKNOWN, clear it
-        lastValidGestureRef.current = "UNKNOWN";
-        setSmoothedGesture("UNKNOWN");
-        sameGestureCountRef.current = 0;
-      }
-      return;
-    }
-    
-    // Reset unknown counter
-    unknownCountRef.current = 0;
-    
-    // Almost immediate pass-through with minimal buffering
-    // If same gesture as last frame, accept immediately
-    if (gesture === lastGestureRef.current) {
-      sameGestureCountRef.current++;
-      // Accept after just 1 matching frame
-      if (sameGestureCountRef.current >= 1) {
-        lastValidGestureRef.current = gesture;
-        lastValidTimeRef.current = now;
-        setSmoothedGesture(gesture);
-      }
-    } else {
-      // Gesture changed - accept immediately but reset counter
-      sameGestureCountRef.current = 1;
-      lastValidGestureRef.current = gesture;
-      lastValidTimeRef.current = now;
+    // INSTANT gesture detection - no buffering, no delay
+    // Just pass through the gesture immediately like Inventor does
+    if (gesture !== lastGestureRef.current) {
       setSmoothedGesture(gesture);
+      lastGestureRef.current = gesture;
     }
-    
-    lastGestureRef.current = gesture;
-  }, [gesture, smoothingFrames]);
+  }, [gesture]);
 
-  // Minimal smoothing for pitch - almost direct pass-through
+  // MINIMAL smoothing for orientation - very light, just to prevent jitter
   useEffect(() => {
     if (pitch !== null && !isNaN(pitch) && isFinite(pitch)) {
-      if (smoothedPitch === null) {
-        // First value, use directly
+      if (smoothedPitchRef.current === null) {
+        smoothedPitchRef.current = pitch;
         setSmoothedPitch(pitch);
       } else {
-        // Very light smoothing - 70% new value, 30% old
-        const smoothed = pitch * 0.7 + smoothedPitch * 0.3;
+        // Very light smoothing - 85% new, 15% old (almost instant)
+        const smoothed = pitch * 0.85 + smoothedPitchRef.current * 0.15;
+        smoothedPitchRef.current = smoothed;
         setSmoothedPitch(smoothed);
       }
     } else {
+      smoothedPitchRef.current = null;
       setSmoothedPitch(null);
     }
-  }, [pitch]);
+  }, [pitch]); // Only depend on pitch, not smoothedPitch
 
-  // Minimal smoothing for yaw - almost direct pass-through
   useEffect(() => {
     if (yaw !== null && !isNaN(yaw) && isFinite(yaw)) {
-      if (smoothedYaw === null) {
-        // First value, use directly
+      if (smoothedYawRef.current === null) {
+        smoothedYawRef.current = yaw;
         setSmoothedYaw(yaw);
       } else {
-        // Very light smoothing - 70% new value, 30% old
-        const smoothed = yaw * 0.7 + smoothedYaw * 0.3;
+        // Very light smoothing - 85% new, 15% old (almost instant)
+        const smoothed = yaw * 0.85 + smoothedYawRef.current * 0.15;
+        smoothedYawRef.current = smoothed;
         setSmoothedYaw(smoothed);
       }
     } else {
+      smoothedYawRef.current = null;
       setSmoothedYaw(null);
     }
-  }, [yaw]);
+  }, [yaw]); // Only depend on yaw, not smoothedYaw
 
-  // Minimal smoothing for roll - almost direct pass-through
   useEffect(() => {
     if (roll !== null && !isNaN(roll) && isFinite(roll)) {
-      if (smoothedRoll === null) {
-        // First value, use directly
+      if (smoothedRollRef.current === null) {
+        smoothedRollRef.current = roll;
         setSmoothedRoll(roll);
       } else {
-        // Very light smoothing - 70% new value, 30% old
-        const smoothed = roll * 0.7 + smoothedRoll * 0.3;
+        // Very light smoothing - 85% new, 15% old (almost instant)
+        const smoothed = roll * 0.85 + smoothedRollRef.current * 0.15;
+        smoothedRollRef.current = smoothed;
         setSmoothedRoll(smoothed);
       }
     } else {
+      smoothedRollRef.current = null;
       setSmoothedRoll(null);
     }
-  }, [roll]);
-
-  // Minimal smoothing for pitch - almost direct pass-through
-  useEffect(() => {
-    if (pitch !== null && !isNaN(pitch) && isFinite(pitch)) {
-      if (smoothedPitch === null) {
-        // First value, use directly
-        setSmoothedPitch(pitch);
-      } else {
-        // Very light smoothing - 70% new value, 30% old
-        const smoothed = pitch * 0.7 + smoothedPitch * 0.3;
-        setSmoothedPitch(smoothed);
-      }
-    } else {
-      setSmoothedPitch(null);
-    }
-  }, [pitch]);
+  }, [roll]); // Only depend on roll, not smoothedRoll
 
   return {
     gesture: smoothedGesture,

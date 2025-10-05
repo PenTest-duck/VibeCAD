@@ -67,7 +67,11 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   const [gestureFistClosed, setGestureFistClosed] = useState(false);
   const [gestureEnabled, setGestureEnabled] = useState(false);
   const [gestureScaleEnabled, setGestureScaleEnabled] = useState(false);
+  const [gestureRotationEnabled, setGestureRotationEnabled] = useState(true); // Rotation enabled by default
   const [movementPlane, setMovementPlane] = useState<MovementPlane>("XZ");
+  
+  // Camera control state
+  const [resetCamera, setResetCamera] = useState(false);
   
   // Voice control state
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -78,14 +82,14 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   const [refreshKey, setRefreshKey] = useState(0);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-    // Apply smoothing to gesture values
+    // INSTANT gesture response - no buffering for Inventor-like feel
   const smoothedGesture = useSmoothedGesture(
     currentGesture,
     gesturePitch,
     gestureYaw,
     gestureRoll,
     gestureFistClosed,
-    3
+    1
   );
 
   // Handle client-side mounting
@@ -418,6 +422,8 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         setGestureEnabled={setGestureEnabled}
         gestureScaleEnabled={gestureScaleEnabled}
         setGestureScaleEnabled={setGestureScaleEnabled}
+        gestureRotationEnabled={gestureRotationEnabled}
+        setGestureRotationEnabled={setGestureRotationEnabled}
         movementPlane={movementPlane}
         setMovementPlane={setMovementPlane}
         setCurrentGesture={setCurrentGesture}
@@ -432,6 +438,10 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         currentTranscript={currentTranscript}
         finalTranscript={finalTranscript}
         showCameraHint={showCameraHint}
+        onResetCamera={() => {
+          setResetCamera(true);
+          setTimeout(() => setResetCamera(false), 100);
+        }}
         isEditingCAD={isEditingCAD}
       />
 
@@ -466,6 +476,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
             isFistClosed={smoothedGesture.isFistClosed}
             bounds={bounds}
             scaleEnabled={gestureScaleEnabled}
+            rotationEnabled={gestureRotationEnabled}
             movementPlane={movementPlane}
           />
         )}
@@ -476,6 +487,8 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
             yaw={smoothedGesture.yaw} 
             roll={smoothedGesture.roll} 
             isFistClosed={smoothedGesture.isFistClosed}
+            resetCamera={resetCamera}
+            rotationEnabled={gestureRotationEnabled}
           />
         )}
         
@@ -483,6 +496,17 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         <Lights />
         <Ground size={Math.max(50, (bounds.max.x - bounds.min.x) * 1.5)} />
         {showBounds && <BoundsBox box={bounds} />}
+        
+        {/* World Origin Marker - Fixed rotation center like Inventor/SolidWorks */}
+        <group position={[0, 0, 0]}>
+          {/* Small sphere at origin */}
+          <mesh>
+            <sphereGeometry args={[0.1, 16, 16]} />
+            <meshBasicMaterial color="#ff0000" opacity={0.5} transparent />
+          </mesh>
+          {/* Axis helpers */}
+          <axesHelper args={[2]} />
+        </group>
         
         {/* Map Controls */}
         <MapControls 
@@ -495,16 +519,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
           maxPolarAngle={Math.PI / 2 - 0.1}
         />
 
-        {/* ViewCube */}
-        <GizmoHelper alignment="top-right" margin={[80, 80]}>
-          <GizmoViewcube 
-            color="#3b82f6"
-            hoverColor="#60a5fa"
-            textColor="#ffffff"
-            strokeColor="#1e40af"
-            opacity={0.9}
-          />
-        </GizmoHelper>
+        {/* ViewCube removed - replaced with home button in UI */}
 
         {/* Scene Objects */}
         {items.map((it) => (
@@ -532,6 +547,8 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
             translationSnap={snap ? snapStep : undefined}
             rotationSnap={snap ? THREE.MathUtils.degToRad(15) : undefined}
             scaleSnap={snap ? 0.1 : undefined}
+            makeDefault={false}
+            camera={undefined}
             onObjectChange={() => {
               if (selected) {
                 clampVector3ToBox(selected.position, bounds);

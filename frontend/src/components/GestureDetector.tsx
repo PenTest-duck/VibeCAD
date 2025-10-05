@@ -166,7 +166,7 @@ export default function GestureDetector({
 
     // Return angles
     return {
-      pitch: pitch * 1.5,  // Amplify pitch for better sensitivity
+      pitch: pitch * -2.5,  // Amplify and INVERT pitch for correct direction (negative for inversion)
       yaw,
       roll
     };
@@ -385,19 +385,19 @@ export default function GestureDetector({
     if (onGestureChange) {
       onGestureChange(currentGesture);
     }
-  }, [currentGesture, onGestureChange]);
+  }, [currentGesture]); // Remove callback from deps to prevent infinite loop
 
   useEffect(() => {
     if (onOrientationChange) {
       onOrientationChange(pitch, yaw, roll);
     }
-  }, [pitch, yaw, roll, onOrientationChange]);
+  }, [pitch, yaw, roll]); // Remove callback from deps to prevent infinite loop
 
   useEffect(() => {
     if (onFistChange) {
       onFistChange(isFistClosed);
     }
-  }, [isFistClosed, onFistChange]);
+  }, [isFistClosed]); // Remove callback from deps to prevent infinite loop
 
   // Process video frames
   useEffect(() => {
