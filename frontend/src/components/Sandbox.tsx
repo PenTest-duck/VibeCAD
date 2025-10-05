@@ -7,6 +7,7 @@ import { MapControls, TransformControls, Html, useCursor, GizmoHelper, GizmoView
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import GestureDetectorCompact, { GestureType } from "./GestureDetectorCompact";
 
 interface UploadedItem {
   id: string;
@@ -207,6 +208,74 @@ function CameraRig() {
   return null;
 }
 
+// Gesture-controlled camera movement
+function GestureCamera({ 
+  gesture, 
+  yaw, 
+  roll, 
+  isFistClosed 
+}: { 
+  gesture: GestureType; 
+  yaw: number | null; 
+  roll: number | null; 
+  isFistClosed: boolean;
+}) {
+  const { camera } = useThree();
+  const targetRef = useRef(new THREE.Vector3(0, 0, 0));
+  
+  useFrame((state, delta) => {
+    const moveSpeed = 10 * delta; // units per second
+    const rotateSpeed = 60 * delta; // degrees per second
+    
+    // Directional movements
+    if (gesture === "UP") {
+      camera.position.y += moveSpeed;
+      targetRef.current.y += moveSpeed;
+    } else if (gesture === "DOWN") {
+      camera.position.y -= moveSpeed;
+      targetRef.current.y -= moveSpeed;
+    } else if (gesture === "LEFT") {
+      camera.position.x -= moveSpeed;
+      targetRef.current.x -= moveSpeed;
+    } else if (gesture === "RIGHT") {
+      camera.position.x += moveSpeed;
+      targetRef.current.x += moveSpeed;
+    } else if (gesture === "ZOOM IN") {
+      // Move camera towards target
+      const direction = new THREE.Vector3();
+      direction.subVectors(targetRef.current, camera.position).normalize();
+      camera.position.addScaledVector(direction, moveSpeed);
+    } else if (gesture === "ZOOM OUT") {
+      // Move camera away from target
+      const direction = new THREE.Vector3();
+      direction.subVectors(targetRef.current, camera.position).normalize();
+      camera.position.addScaledVector(direction, -moveSpeed);
+    }
+    
+    // Fist rotation (yaw and roll control)
+    if (isFistClosed && yaw !== null && roll !== null) {
+      // Rotate camera around target based on yaw (horizontal rotation)
+      const radius = camera.position.distanceTo(targetRef.current);
+      const yawRadians = THREE.MathUtils.degToRad(yaw * 0.5 * delta);
+      
+      // Orbit around Y axis
+      const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
+      const quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRadians);
+      offset.applyQuaternion(quaternion);
+      camera.position.copy(targetRef.current).add(offset);
+      
+      // Adjust height based on roll
+      const rollEffect = roll * 0.01 * delta;
+      camera.position.y += rollEffect;
+    }
+    
+    // Always look at target
+    camera.lookAt(targetRef.current);
+  });
+  
+  return null;
+}
+
 // -------- Main Sandbox Component --------
 export default function Sandbox3D() {
   // Fixed workspace bounds (edit to taste)
@@ -221,6 +290,13 @@ export default function Sandbox3D() {
   const [showDropMessage, setShowDropMessage] = useState(true);
   const [showCameraHint, setShowCameraHint] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
+  
+  // Gesture control state
+  const [currentGesture, setCurrentGesture] = useState<GestureType>("UNKNOWN");
+  const [gestureYaw, setGestureYaw] = useState<number | null>(null);
+  const [gestureRoll, setGestureRoll] = useState<number | null>(null);
+  const [gestureFistClosed, setGestureFistClosed] = useState(false);
+  const [gestureEnabled, setGestureEnabled] = useState(false);
 
   // Handle client-side mounting to prevent hydration issues
   useEffect(() => {
