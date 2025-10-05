@@ -6,7 +6,6 @@ export function useSmoothedGesture(
   pitch: number | null,
   yaw: number | null,
   roll: number | null,
-  pitch: number | null,
   isFistClosed: boolean,
   smoothingFrames: number = 2
 ) {
@@ -19,7 +18,6 @@ export function useSmoothedGesture(
   const [smoothedPitch, setSmoothedPitch] = useState<number | null>(null);
   const [smoothedYaw, setSmoothedYaw] = useState<number | null>(null);
   const [smoothedRoll, setSmoothedRoll] = useState<number | null>(null);
-  const [smoothedPitch, setSmoothedPitch] = useState<number | null>(null);
 
   useEffect(() => {
     const now = Date.now();
@@ -147,7 +145,6 @@ export function useSmoothedGesture(
     pitch: smoothedPitch,
     yaw: smoothedYaw,
     roll: smoothedRoll,
-    pitch: smoothedPitch,
     isFistClosed
   };
 }

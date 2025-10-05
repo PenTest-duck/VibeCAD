@@ -64,7 +64,6 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   const [gesturePitch, setGesturePitch] = useState<number | null>(null);
   const [gestureYaw, setGestureYaw] = useState<number | null>(null);
   const [gestureRoll, setGestureRoll] = useState<number | null>(null);
-  const [gesturePitch, setGesturePitch] = useState<number | null>(null);
   const [gestureFistClosed, setGestureFistClosed] = useState(false);
   const [gestureEnabled, setGestureEnabled] = useState(false);
   const [gestureScaleEnabled, setGestureScaleEnabled] = useState(false);
@@ -83,7 +82,6 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
     gesturePitch,
     gestureYaw,
     gestureRoll,
-    gesturePitch,
     gestureFistClosed,
     3
   );
@@ -365,7 +363,6 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         setGesturePitch={setGesturePitch}
         setGestureYaw={setGestureYaw}
         setGestureRoll={setGestureRoll}
-        setGesturePitch={setGesturePitch}
         setGestureFistClosed={setGestureFistClosed}
         smoothedGesture={smoothedGesture}
         currentGesture={currentGesture}
@@ -404,7 +401,6 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
             pitch={smoothedGesture.pitch}
             yaw={smoothedGesture.yaw} 
             roll={smoothedGesture.roll}
-            pitch={smoothedGesture.pitch}
             isFistClosed={smoothedGesture.isFistClosed}
             bounds={bounds}
             scaleEnabled={gestureScaleEnabled}
