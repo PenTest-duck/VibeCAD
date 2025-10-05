@@ -401,14 +401,14 @@ export default function Sandbox3D() {
   // Prevent hydration issues by not rendering until mounted
   if (!isMounted) {
     return (
-      <div className="relative h-[80vh] w-full rounded-2xl overflow-hidden bg-gradient-to-br from-neutral-950 to-neutral-900 border border-neutral-800 shadow-2xl flex items-center justify-center">
+      <div className="relative h-screen w-full overflow-hidden bg-gradient-to-br from-neutral-950 to-neutral-900 flex items-center justify-center">
         <div className="text-neutral-400">Loading 3D workspace...</div>
       </div>
     );
   }
 
   return (
-    <div className="relative h-[80vh] w-full rounded-2xl overflow-hidden bg-gradient-to-br from-neutral-950 to-neutral-900 border border-neutral-800 shadow-2xl" onDrop={onDrop} onDragOver={onDragOver}>
+    <div className="relative h-screen w-full overflow-hidden bg-gradient-to-br from-neutral-950 to-neutral-900" onDrop={onDrop} onDragOver={onDragOver}>
       {/* UI overlay - Top Controls */}
       <div className="pointer-events-auto absolute left-4 top-4 z-10 flex flex-wrap gap-2 rounded-xl bg-neutral-900/90 p-2 backdrop-blur-md text-sm text-neutral-100 shadow-xl border border-neutral-700/50">
         {/* Upload Button */}
@@ -479,7 +479,16 @@ export default function Sandbox3D() {
       )}
 
       {/* Bottom Right Controls */}
-      <div className="pointer-events-auto absolute right-4 bottom-4 z-10 flex flex-col gap-2">
+      <div className="pointer-events-auto absolute right-4 bottom-4 z-10 flex flex-col gap-2 items-end">
+        {/* Gesture Control Toggle */}
+        <button 
+          className={`rounded-lg px-3 py-2 transition-all text-sm font-medium ${gestureEnabled ? "bg-purple-600 hover:bg-purple-700 text-white" : "bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300"} backdrop-blur-md shadow-lg`}
+          onClick={() => setGestureEnabled(!gestureEnabled)}
+          title="Toggle gesture control"
+        >
+          {gestureEnabled ? "👋 Gesture On" : "👋 Gesture Off"}
+        </button>
+        
         <button 
           className={`rounded-lg px-3 py-2 transition-all text-sm font-medium ${snap ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300"} backdrop-blur-md shadow-lg`}
           onClick={() => setSnap(!snap)}
@@ -503,6 +512,20 @@ export default function Sandbox3D() {
             🗑️ Delete
           </button>
         )}
+        
+        {/* Gesture Detector - only show when enabled */}
+        {gestureEnabled && (
+          <div className="mt-2">
+            <GestureDetectorCompact
+              onGestureChange={setCurrentGesture}
+              onOrientationChange={(yaw, roll) => {
+                setGestureYaw(yaw);
+                setGestureRoll(roll);
+              }}
+              onFistChange={setGestureFistClosed}
+            />
+          </div>
+        )}
       </div>
 
       {/* Drag & drop hint - fades out after 5 seconds or when items are added */}
@@ -524,6 +547,14 @@ export default function Sandbox3D() {
         <color attach="background" args={["#87ceeb"]} />
         <fog attach="fog" args={["#b0d4ff", 50, 200]} />
         <CameraRig />
+        {gestureEnabled && (
+          <GestureCamera 
+            gesture={currentGesture} 
+            yaw={gestureYaw} 
+            roll={gestureRoll} 
+            isFistClosed={gestureFistClosed}
+          />
+        )}
         <Lights />
         <Ground size={Math.max(50, (bounds.max.x - bounds.min.x) * 1.5)} />
         {showBounds && <BoundsBox box={bounds} />}
