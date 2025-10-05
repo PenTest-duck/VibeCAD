@@ -45,6 +45,12 @@ def fingers_up(hand_landmarks):
         states.append(1 if is_finger_extended(tip, pip, mcp) else 0)
     return states
 
+def is_fist_closed(hand_landmarks):
+    """
+    Returns True if all fingers (index, middle, ring, pinky) are folded.
+    """
+    return sum(fingers_up(hand_landmarks)) == 0
+
 def detect_direction(hand_landmarks):
     """
     Returns one of 'UP', 'DOWN', 'LEFT', 'RIGHT' based on
@@ -168,8 +174,10 @@ with mp_hands.Hands(
 
                 if gesture != "UNKNOWN":
                     display_text = f"Gesture: {gesture}"
-                else:
+                elif is_fist_closed(hand_landmarks):
                     display_text = f"Yaw: {yaw:.1f} degrees, Roll: {roll:.1f} degrees"
+                else:
+                    display_text = "Gesture: NONE"
 
 
                 cv2.putText(frame, display_text, (50, 100),
