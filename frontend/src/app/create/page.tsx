@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Upload, Palette, Sparkles, ArrowRight, Trash2, Wand2, Home } from "lucide-react";
+import { generateCAD } from "@/api/client";
 import Link from "next/link";
 
 export default function CreatePage() {
@@ -104,27 +105,42 @@ export default function CreatePage() {
     }
   }, []);
 
-  const generateCAD = useCallback(async () => {
+  const handleGenerate = useCallback(async () => {
     setIsGenerating(true);
     
     try {
-      // This will be implemented to send the sketch to the backend
-      console.log('Generating CAD from:', activeTab === 'upload' ? uploadedFile : 'canvas');
-
-      if (activeTab === 'draw' && canvasRef.current) {
+      let imageFile: File;
+      
+      if (activeTab === 'upload' && uploadedFile) {
+        // Use the uploaded file directly
+        imageFile = uploadedFile;
+      } else if (activeTab === 'draw' && canvasRef.current) {
+        // Convert canvas to File
         const canvas = canvasRef.current;
         const pngDataUrl = canvas.toDataURL('image/png');
-        console.log('Canvas PNG Data URL:', pngDataUrl);
-        // You can now use pngDataUrl to send the image to the backend or for further processing
+        
+        // Convert data URL to blob, then to File
+        const response = await fetch(pngDataUrl);
+        const blob = await response.blob();
+        imageFile = new File([blob], 'sketch.png', { type: 'image/png' });
+      } else {
+        throw new Error('No image available to generate CAD');
       }
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      console.log('Generating CAD from:', imageFile.name);
       
-      // Here you would typically redirect to a results page or show the generated CAD
-      console.log('CAD generation completed!');
+      // Call the generateCAD API
+      const modelId = await generateCAD(imageFile);
+      
+      console.log('CAD generation completed! Model ID:', modelId);
+      
+      // TODO: Handle the generated model (redirect to results page, show success message, etc.)
+      // For now, just show an alert
+      alert(`CAD model generated successfully! Model ID: ${modelId}`);
+      
     } catch (error) {
       console.error('Error generating CAD:', error);
+      alert('Failed to generate CAD. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -305,7 +321,7 @@ export default function CreatePage() {
         <div className="text-center mt-6">
           <Button
             size="lg"
-            onClick={generateCAD}
+            onClick={handleGenerate}
             disabled={!hasContent || isGenerating}
             className={`group relative inline-flex items-center gap-2 px-8 py-4 text-lg font-semibold rounded-2xl transition-all duration-300 ${
               hasContent && !isGenerating

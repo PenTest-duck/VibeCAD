@@ -1,8 +1,11 @@
 // This returns the CAD model ID
 export const generateCAD = async (image: File): Promise<string> => {
+  const formData = new FormData();
+  formData.append("image", image);
+
   const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/generate`, {
     method: "POST",
-    body: image,
+    body: formData,
   });
   if (!response.ok) {
     throw new Error("Failed to generate CAD");
@@ -15,6 +18,9 @@ export const generateCAD = async (image: File): Promise<string> => {
 export const editCAD = async (modelID: string, prompt: string): Promise<void> => {
   const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/edit`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ model_id: modelID, prompt }),
   });
   if (!response.ok) {
