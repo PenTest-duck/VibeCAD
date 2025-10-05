@@ -180,9 +180,9 @@ Surround your SCAD code with ```scad and ```.
         subprocess.run(args=["openscad", "-o", stl_path, scad_path], check=True)
 
         # Upload updated SCAD and STL
-        storage.upload(path=f"scad/{request.model_id}.scad", file=scad_code.encode("utf-8"))
+        storage.update(path=f"scad/{request.model_id}.scad", file=scad_code.encode("utf-8"), file_options={"cache-control": "3600", "upsert": "true"})
         with open(stl_path, "rb") as f:
-            storage.upload(path=f"stl/{request.model_id}.stl", file=f.read())
+            storage.update(path=f"stl/{request.model_id}.stl", file=f.read(), file_options={"cache-control": "3600", "upsert": "true"})
 
     print(f"Done! Model ID: {request.model_id}")
 
