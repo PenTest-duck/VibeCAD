@@ -271,8 +271,122 @@ function CameraRig() {
   return null;
 }
 
-// Gesture-controlled camera movement
-function GestureCamera({ 
+// Minimal smoothing - prioritize responsiveness over stability
+function useSmoothedGesture(
+  gesture: GestureType,
+  yaw: number | null,
+  roll: number | null,
+  isFistClosed: boolean,
+  smoothingFrames: number = 2 // Minimal smoothing
+) {
+  const lastGestureRef = useRef<GestureType>("UNKNOWN");
+  const lastValidGestureRef = useRef<GestureType>("UNKNOWN");
+  const lastValidTimeRef = useRef(Date.now());
+  const unknownCountRef = useRef(0);
+  const sameGestureCountRef = useRef(0);
+  const [smoothedGesture, setSmoothedGesture] = useState<GestureType>("UNKNOWN");
+  const [smoothedYaw, setSmoothedYaw] = useState<number | null>(null);
+  const [smoothedRoll, setSmoothedRoll] = useState<number | null>(null);
+
+  useEffect(() => {
+    const now = Date.now();
+    
+    // Handle UNKNOWN - clear gesture quickly when hand disappears
+    if (gesture === "UNKNOWN") {
+      unknownCountRef.current++;
+      
+      // Special handling for zoom gestures - clear them immediately
+      const isZoomGesture = lastValidGestureRef.current === "ZOOM IN" || lastValidGestureRef.current === "ZOOM OUT";
+      
+      if (isZoomGesture) {
+        // Clear zoom gestures immediately - no persistence
+        lastValidGestureRef.current = "UNKNOWN";
+        setSmoothedGesture("UNKNOWN");
+        sameGestureCountRef.current = 0;
+        return;
+      }
+      
+      // For non-zoom gestures, only persist for 100ms (very brief - just for momentary tracking loss)
+      const timeSinceLastValid = now - lastValidTimeRef.current;
+      if (timeSinceLastValid < 100 && lastValidGestureRef.current !== "UNKNOWN") {
+        // Keep last gesture very briefly during momentary tracking loss
+        setSmoothedGesture(lastValidGestureRef.current);
+        return;
+      } else {
+        // After 100ms or immediately if already UNKNOWN, clear it
+        lastValidGestureRef.current = "UNKNOWN";
+        setSmoothedGesture("UNKNOWN");
+        sameGestureCountRef.current = 0;
+      }
+      return;
+    }
+    
+    // Reset unknown counter
+    unknownCountRef.current = 0;
+    
+    // Almost immediate pass-through with minimal buffering
+    // If same gesture as last frame, accept immediately
+    if (gesture === lastGestureRef.current) {
+      sameGestureCountRef.current++;
+      // Accept after just 1 matching frame
+      if (sameGestureCountRef.current >= 1) {
+        lastValidGestureRef.current = gesture;
+        lastValidTimeRef.current = now;
+        setSmoothedGesture(gesture);
+      }
+    } else {
+      // Gesture changed - accept immediately but reset counter
+      sameGestureCountRef.current = 1;
+      lastValidGestureRef.current = gesture;
+      lastValidTimeRef.current = now;
+      setSmoothedGesture(gesture);
+    }
+    
+    lastGestureRef.current = gesture;
+  }, [gesture, smoothingFrames]);
+
+  // Minimal smoothing for yaw - almost direct pass-through
+  useEffect(() => {
+    if (yaw !== null && !isNaN(yaw) && isFinite(yaw)) {
+      if (smoothedYaw === null) {
+        // First value, use directly
+        setSmoothedYaw(yaw);
+      } else {
+        // Very light smoothing - 70% new value, 30% old
+        const smoothed = yaw * 0.7 + smoothedYaw * 0.3;
+        setSmoothedYaw(smoothed);
+      }
+    } else {
+      setSmoothedYaw(null);
+    }
+  }, [yaw]);
+
+  // Minimal smoothing for roll - almost direct pass-through
+  useEffect(() => {
+    if (roll !== null && !isNaN(roll) && isFinite(roll)) {
+      if (smoothedRoll === null) {
+        // First value, use directly
+        setSmoothedRoll(roll);
+      } else {
+        // Very light smoothing - 70% new value, 30% old
+        const smoothed = roll * 0.7 + smoothedRoll * 0.3;
+        setSmoothedRoll(smoothed);
+      }
+    } else {
+      setSmoothedRoll(null);
+    }
+  }, [roll]);
+
+  return {
+    gesture: smoothedGesture,
+    yaw: smoothedYaw,
+    roll: smoothedRoll,
+    isFistClosed
+  };
+}
+
+// Gesture-controlled camera movement (when no object is selected)
+function GestureCameraController({ 
   gesture, 
   yaw, 
   roll, 
@@ -285,12 +399,21 @@ function GestureCamera({
 }) {
   const { camera } = useThree();
   const targetRef = useRef(new THREE.Vector3(0, 0, 0));
+  const lastYawRef = useRef<number | null>(null);
+  const lastRollRef = useRef<number | null>(null);
   
   useFrame((state, delta) => {
-    const moveSpeed = 10 * delta; // units per second
-    const rotateSpeed = 60 * delta; // degrees per second
+    // Slower, more controlled movement
+    const moveSpeed = 5 * delta; // Reduced from 8
+    const zoomSpeed = 6 * delta;
+    const rotateSpeed = 0.8 * delta; // Reduced sensitivity
     
-    // Directional movements
+    // Debug: Log when a non-UNKNOWN gesture is received
+    if (gesture !== "UNKNOWN" && Math.random() < 0.1) { // Log 10% of frames to avoid spam
+      console.log("Camera gesture:", gesture);
+    }
+    
+    // Directional movements - move camera and target together
     if (gesture === "UP") {
       camera.position.y += moveSpeed;
       targetRef.current.y += moveSpeed;
@@ -307,33 +430,158 @@ function GestureCamera({
       // Move camera towards target
       const direction = new THREE.Vector3();
       direction.subVectors(targetRef.current, camera.position).normalize();
-      camera.position.addScaledVector(direction, moveSpeed);
+      const distance = camera.position.distanceTo(targetRef.current);
+      if (distance > 2) { // Don't get too close
+        camera.position.addScaledVector(direction, zoomSpeed);
+      }
     } else if (gesture === "ZOOM OUT") {
       // Move camera away from target
       const direction = new THREE.Vector3();
       direction.subVectors(targetRef.current, camera.position).normalize();
-      camera.position.addScaledVector(direction, -moveSpeed);
+      const distance = camera.position.distanceTo(targetRef.current);
+      if (distance < 80) { // Don't get too far
+        camera.position.addScaledVector(direction, -zoomSpeed);
+      }
     }
     
-    // Fist rotation (yaw and roll control)
+    // Fist rotation - orbit camera around target
     if (isFistClosed && yaw !== null && roll !== null) {
-      // Rotate camera around target based on yaw (horizontal rotation)
-      const radius = camera.position.distanceTo(targetRef.current);
-      const yawRadians = THREE.MathUtils.degToRad(yaw * 0.5 * delta);
+      if (lastYawRef.current !== null && lastRollRef.current !== null) {
+        const yawDelta = yaw - lastYawRef.current;
+        const rollDelta = roll - lastRollRef.current;
+        
+        // Dead zone - ignore small movements
+        const deadZone = 2; // degrees
+        
+        if (Math.abs(yawDelta) > deadZone) {
+          // Orbit around Y axis (yaw)
+          const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
+          const clampedYawDelta = THREE.MathUtils.clamp(yawDelta, -15, 15); // Limit max rotation per frame
+          const quaternion = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0), 
+            THREE.MathUtils.degToRad(clampedYawDelta * rotateSpeed)
+          );
+          offset.applyQuaternion(quaternion);
+          camera.position.copy(targetRef.current).add(offset);
+        }
+        
+        if (Math.abs(rollDelta) > deadZone) {
+          // Adjust height based on roll
+          const clampedRollDelta = THREE.MathUtils.clamp(rollDelta, -15, 15);
+          camera.position.y += clampedRollDelta * rotateSpeed * 0.3;
+        }
+      }
       
-      // Orbit around Y axis
-      const offset = new THREE.Vector3().subVectors(camera.position, targetRef.current);
-      const quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRadians);
-      offset.applyQuaternion(quaternion);
-      camera.position.copy(targetRef.current).add(offset);
-      
-      // Adjust height based on roll
-      const rollEffect = roll * 0.01 * delta;
-      camera.position.y += rollEffect;
+      lastYawRef.current = yaw;
+      lastRollRef.current = roll;
+    } else {
+      lastYawRef.current = null;
+      lastRollRef.current = null;
     }
     
     // Always look at target
     camera.lookAt(targetRef.current);
+  });
+  
+  return null;
+}
+
+// Gesture-controlled object manipulation (when object is selected)
+function GestureObjectController({ 
+  selectedObject,
+  gesture, 
+  yaw, 
+  roll, 
+  isFistClosed,
+  bounds
+}: { 
+  selectedObject: THREE.Object3D;
+  gesture: GestureType; 
+  yaw: number | null; 
+  roll: number | null; 
+  isFistClosed: boolean;
+  bounds: THREE.Box3;
+}) {
+  const lastYawRef = useRef<number | null>(null);
+  const lastRollRef = useRef<number | null>(null);
+  
+  useFrame((state, delta) => {
+    // Slower, more precise control
+    const moveSpeed = 1.5 * delta; // Reduced from 2
+    const scaleSpeed = 0.00003; // Much slower scaling - 0.03% per frame
+    const rotateSpeed = 1.2 * delta; // Reduced from 2
+    
+    // Debug: Log when a zoom gesture is received
+    if ((gesture === "ZOOM IN" || gesture === "ZOOM OUT") && Math.random() < 0.2) {
+      console.log("Object zoom:", gesture, "Current scale:", selectedObject.scale.x);
+    }
+    
+    // Directional movements - translate the object
+    if (gesture === "UP") {
+      selectedObject.position.z -= moveSpeed;
+    } else if (gesture === "DOWN") {
+      selectedObject.position.z += moveSpeed;
+    } else if (gesture === "LEFT") {
+      selectedObject.position.x -= moveSpeed;
+    } else if (gesture === "RIGHT") {
+      selectedObject.position.x += moveSpeed;
+    } else if (gesture === "ZOOM IN") {
+      // Scale down the object - additive for consistent rate (zoom in = make smaller)
+      const currentScale = selectedObject.scale.x;
+      if (currentScale > 0.001) { // Very small minimum to prevent disappearing
+        const newScale = currentScale - (scaleSpeed * 2); // Additive decrease
+        selectedObject.scale.setScalar(Math.max(newScale, 0.001));
+      }
+    } else if (gesture === "ZOOM OUT") {
+      // Scale up the object - additive for consistent rate (zoom out = make bigger)
+      const currentScale = selectedObject.scale.x;
+      if (currentScale < 500) { // Much larger maximum
+        const newScale = currentScale + (scaleSpeed * 2); // Additive increase
+        selectedObject.scale.setScalar(Math.min(newScale, 500));
+      }
+    }
+    
+    // Fist rotation - rotate the object based on yaw and roll
+    if (isFistClosed && yaw !== null && roll !== null) {
+      // Use delta from last frame for smooth rotation
+      if (lastYawRef.current !== null && lastRollRef.current !== null) {
+        const yawDelta = yaw - lastYawRef.current;
+        const rollDelta = roll - lastRollRef.current;
+        
+        // Dead zone - ignore small movements
+        const deadZone = 2; // degrees
+        
+        if (Math.abs(yawDelta) > deadZone) {
+          // Clamp rotation delta to prevent jumps
+          const clampedYawDelta = THREE.MathUtils.clamp(yawDelta, -15, 15);
+          // Yaw rotates around Y axis
+          selectedObject.rotateOnWorldAxis(
+            new THREE.Vector3(0, 1, 0), 
+            THREE.MathUtils.degToRad(clampedYawDelta * rotateSpeed)
+          );
+        }
+        
+        if (Math.abs(rollDelta) > deadZone) {
+          // Clamp rotation delta to prevent jumps
+          const clampedRollDelta = THREE.MathUtils.clamp(rollDelta, -15, 15);
+          // Roll rotates around X axis
+          selectedObject.rotateOnWorldAxis(
+            new THREE.Vector3(1, 0, 0), 
+            THREE.MathUtils.degToRad(clampedRollDelta * rotateSpeed)
+          );
+        }
+      }
+      
+      lastYawRef.current = yaw;
+      lastRollRef.current = roll;
+    } else {
+      // Reset tracking when fist is not closed
+      lastYawRef.current = null;
+      lastRollRef.current = null;
+    }
+    
+    // Clamp position to bounds
+    selectedObject.position.clamp(bounds.min, bounds.max);
   });
   
   return null;
@@ -371,6 +619,15 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   const [finalTranscript, setFinalTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  // Apply smoothing/debouncing to gesture values with persistence during tracking loss
+  const smoothedGesture = useSmoothedGesture(
+    currentGesture,
+    gestureYaw,
+    gestureRoll,
+    gestureFistClosed,
+    3 // smoothing frames - reduced for faster response
+  );
 
   // Handle client-side mounting to prevent hydration issues
   useEffect(() => {
@@ -661,7 +918,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         )}
       </div>
 
-      {/* Bottom Left - Camera Controls Hint - fades out after 8 seconds */}
+      {/* Bottom Left - Controls Hint - fades out after 8 seconds */}
       {showCameraHint && (
         <div 
           className="pointer-events-none absolute left-4 bottom-4 z-10 rounded-lg bg-neutral-900/80 backdrop-blur-md px-3 py-2 text-xs text-neutral-300 shadow-lg border border-neutral-700/50 transition-opacity duration-1000"
@@ -672,6 +929,12 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
           <div>🖱️ Middle Click: Rotate</div>
           <div>🖱️ Scroll: Zoom</div>
           <div>🎯 ViewCube: Quick Views</div>
+          <div className="mt-2 pt-2 border-t border-neutral-700/50 font-medium">Gesture Controls:</div>
+          <div>🎥 No selection: Controls camera</div>
+          <div>📦 With selection: Controls object</div>
+          <div>☝️ Point: Move/Pan</div>
+          <div>🤏 Pinch/Palm: Zoom/Scale</div>
+          <div>✊ Fist: Orbit/Rotate</div>
         </div>
       )}
 
@@ -739,7 +1002,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         
         {/* Gesture Detector - only show when enabled */}
         {gestureEnabled && (
-          <div className="mt-2">
+          <div className="mt-2 flex flex-col gap-2">
             <GestureDetectorCompact
               onGestureChange={setCurrentGesture}
               onOrientationChange={(yaw, roll) => {
@@ -748,6 +1011,31 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
               }}
               onFistChange={setGestureFistClosed}
             />
+            {/* Gesture status indicator */}
+            {!selected && smoothedGesture.gesture !== "UNKNOWN" && (
+              <div className="bg-blue-600/90 backdrop-blur-md px-3 py-2 rounded-lg text-xs text-white font-medium text-center shadow-lg">
+                🎥 Camera: {smoothedGesture.gesture}
+              </div>
+            )}
+            {!selected && smoothedGesture.gesture === "UNKNOWN" && (
+              <div className="bg-neutral-700/90 backdrop-blur-md px-3 py-2 rounded-lg text-xs text-white font-medium text-center shadow-lg">
+                🎥 Controlling Camera
+              </div>
+            )}
+            {selected && smoothedGesture.gesture !== "UNKNOWN" && (
+              <div className="bg-green-600/90 backdrop-blur-md px-3 py-2 rounded-lg text-xs text-white font-medium text-center shadow-lg">
+                📦 Object: {smoothedGesture.gesture}
+              </div>
+            )}
+            {selected && smoothedGesture.gesture === "UNKNOWN" && (
+              <div className="bg-purple-600/90 backdrop-blur-md px-3 py-2 rounded-lg text-xs text-white font-medium text-center shadow-lg">
+                📦 Controlling Object
+              </div>
+            )}
+            {/* Debug info */}
+            <div className="bg-neutral-800/80 backdrop-blur-md px-2 py-1 rounded text-[10px] text-neutral-400 font-mono">
+              Raw: {currentGesture} | Smooth: {smoothedGesture.gesture}
+            </div>
           </div>
         )}
       </div>
@@ -771,12 +1059,22 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
         <color attach="background" args={["#87ceeb"]} />
         <fog attach="fog" args={["#b0d4ff", 50, 200]} />
         <CameraRig />
-        {gestureEnabled && (
-          <GestureCamera 
-            gesture={currentGesture} 
-            yaw={gestureYaw} 
-            roll={gestureRoll} 
-            isFistClosed={gestureFistClosed}
+        {gestureEnabled && selected && (
+          <GestureObjectController 
+            selectedObject={selected}
+            gesture={smoothedGesture.gesture} 
+            yaw={smoothedGesture.yaw} 
+            roll={smoothedGesture.roll} 
+            isFistClosed={smoothedGesture.isFistClosed}
+            bounds={bounds}
+          />
+        )}
+        {gestureEnabled && !selected && (
+          <GestureCameraController 
+            gesture={smoothedGesture.gesture} 
+            yaw={smoothedGesture.yaw} 
+            roll={smoothedGesture.roll} 
+            isFistClosed={smoothedGesture.isFistClosed}
           />
         )}
         <Lights />
