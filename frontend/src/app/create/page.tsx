@@ -8,8 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Upload, Palette, Sparkles, ArrowRight, Trash2, Wand2, Home } from "lucide-react";
 import { generateCAD } from "@/api/client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function CreatePage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'upload' | 'draw'>('upload');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -134,9 +136,8 @@ export default function CreatePage() {
       
       console.log('CAD generation completed! Model ID:', modelId);
       
-      // TODO: Handle the generated model (redirect to results page, show success message, etc.)
-      // For now, just show an alert
-      alert(`CAD model generated successfully! Model ID: ${modelId}`);
+      // Redirect to sandbox page with the model ID
+      router.push(`/sandbox?modelId=${modelId}`);
       
     } catch (error) {
       console.error('Error generating CAD:', error);
