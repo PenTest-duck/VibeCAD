@@ -22,6 +22,7 @@ app = FastAPI()
 client = genai.Client()
 
 app.mount("/stl", StaticFiles(directory="stl"), name="stl")
+app.mount("/scad", StaticFiles(directory="scad"), name="scad")
 
 app.add_middleware(
     CORSMiddleware,

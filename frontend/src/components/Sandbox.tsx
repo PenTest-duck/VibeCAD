@@ -31,6 +31,7 @@ import { GestureCameraController, GestureObjectController } from "@/components/c
 
 // UI
 import { SandboxUI } from "@/components/ui/SandboxUI";
+import SCADEditor from "@/components/SCADEditor";
 
 interface SandboxProps {
   modelId?: string | null;
@@ -53,6 +54,7 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
   const [showDropMessage, setShowDropMessage] = useState(true);
   const [showCameraHint, setShowCameraHint] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
   
   // Gesture control state
   const [currentGesture, setCurrentGesture] = useState<GestureType>("UNKNOWN");
@@ -311,6 +313,13 @@ export default function Sandbox3D({ modelId }: SandboxProps) {
       onDrop={onDrop} 
       onDragOver={onDragOver}
     >
+      {/* SCAD Editor */}
+      <SCADEditor
+        modelId={modelId}
+        isOpen={isEditorOpen}
+        onToggle={() => setIsEditorOpen(!isEditorOpen)}
+      />
+
       {/* UI Overlay */}
       <SandboxUI
         handleFiles={handleFiles}
