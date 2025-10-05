@@ -7,7 +7,48 @@ import { MapControls, TransformControls, Html, useCursor, GizmoHelper, GizmoView
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import GestureDetectorCompact, { GestureType } from "./GestureDetectorCompact";
+import GestureDetector, { GestureType } from "./GestureDetector";
+
+// Speech Recognition types
+declare global {
+  interface Window {
+    SpeechRecognition: typeof SpeechRecognition;
+    webkitSpeechRecognition: typeof SpeechRecognition;
+  }
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+}
+
+declare var SpeechRecognition: {
+  prototype: SpeechRecognition;
+  new(): SpeechRecognition;
+};
+
+declare var webkitSpeechRecognition: {
+  prototype: SpeechRecognition;
+  new(): SpeechRecognition;
+};
 
 interface UploadedItem {
   id: string;
@@ -94,6 +135,28 @@ async function loadModelFromFile(file: File): Promise<THREE.Object3D> {
     }
     default:
       throw new Error(`Unsupported file type: .${ext}. Supported formats: GLB, GLTF, STL, OBJ`);
+  }
+}
+
+// Load model by ID from backend API
+async function loadModelById(modelId: string): Promise<THREE.Object3D> {
+  try {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+    if (!backendUrl) {
+      throw new Error('NEXT_PUBLIC_BACKEND_URL environment variable is not set');
+    }
+    
+    const response = await fetch(`${backendUrl}/stl/${modelId}.stl`);
+    if (!response.ok) {
+      throw new Error(`Failed to load model: ${response.statusText}`);
+    }
+    
+    const blob = await response.blob();
+    const file = new File([blob], `${modelId}.stl`, { type: 'application/octet-stream' });
+    return await loadModelFromFile(file);
+  } catch (error) {
+    console.error('Error loading model by ID:', error);
+    throw error;
   }
 }
 
@@ -553,7 +616,11 @@ function GestureObjectController({
 }
 
 // -------- Main Sandbox Component --------
-export default function Sandbox3D() {
+interface SandboxProps {
+  modelId?: string | null;
+}
+
+export default function Sandbox3D({ modelId }: SandboxProps) {
   // Fixed workspace bounds (edit to taste)
   const bounds = useMemo(() => new THREE.Box3(new THREE.Vector3(-20, 0, -20), new THREE.Vector3(20, 20, 20)), []);
 
@@ -589,6 +656,108 @@ export default function Sandbox3D() {
   useEffect(() => {
     setIsMounted(true);
   }, []);
+  
+  // Dummy function for handling completed utterances
+  const handleUtterance = useCallback((utterance: string) => {
+    console.log("Utterance received:", utterance);
+    // TODO: Implement actual command processing logic here
+  }, []);
+  
+  // Initialize speech recognition when voice is enabled
+  useEffect(() => {
+    if (!isMounted) return;
+    
+    if (voiceEnabled) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        console.error("Speech Recognition is not supported in this browser");
+        setVoiceEnabled(false);
+        return;
+      }
+      
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+      
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+      
+      recognition.onend = () => {
+        setIsListening(false);
+        // Restart if voice is still enabled
+        if (voiceEnabled) {
+          try {
+            recognition.start();
+          } catch (err) {
+            console.error("Failed to restart speech recognition:", err);
+          }
+        }
+      };
+      
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
+        let interimTranscript = "";
+        let finalTranscript = "";
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+        
+        if (finalTranscript) {
+          // Call handleUtterance with the completed sentence
+          handleUtterance(finalTranscript.trim());
+          setFinalTranscript(finalTranscript.trim());
+          setCurrentTranscript("");
+          
+          // Clear final transcript after 3 seconds
+          setTimeout(() => {
+            setFinalTranscript("");
+          }, 3000);
+        } else {
+          // Display interim transcript
+          setCurrentTranscript(interimTranscript);
+        }
+      };
+      
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        console.error("Speech recognition error:", event.error);
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          setVoiceEnabled(false);
+        }
+      };
+      
+      recognitionRef.current = recognition;
+      
+      try {
+        recognition.start();
+      } catch (err) {
+        console.error("Failed to start speech recognition:", err);
+      }
+      
+      // Cleanup on unmount or when voice is disabled
+      return () => {
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+          recognitionRef.current = null;
+        }
+      };
+    } else {
+      // Stop recognition when voice is disabled
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+      setCurrentTranscript("");
+      setFinalTranscript("");
+      setIsListening(false);
+    }
+  }, [voiceEnabled, isMounted, handleUtterance]);
 
   // Fade out drop message after 5 seconds
   useEffect(() => {
@@ -606,6 +775,19 @@ export default function Sandbox3D() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Load model by ID when modelId is provided
+  useEffect(() => {
+    if (modelId && isMounted) {
+      loadModelById(modelId)
+        .then((object) => {
+          addObject(`Model-${modelId}`, object);
+        })
+        .catch((error) => {
+          console.error('Failed to load model:', error);
+        });
+    }
+  }, [modelId, isMounted]);
+
   // Add an uploaded THREE.Object3D into scene state
   const addObject = useCallback((name: string, object: THREE.Object3D) => {
     object.traverse((c: any) => {
@@ -619,7 +801,9 @@ export default function Sandbox3D() {
     box.getSize(size);
     const center = new THREE.Vector3();
     box.getCenter(center);
-    object.position.sub(center); // move pivot to world origin
+    
+    // Move object so its center is at world origin (0,0,0)
+    object.position.sub(center);
     
     // Auto-scale to fit within bounds with some padding
     const boundsSize = new THREE.Vector3();
@@ -635,7 +819,13 @@ export default function Sandbox3D() {
       scaledBox.getSize(size);
     }
     
-    object.position.y = size.y * 0.5; // sit on ground plane
+    // Position object so it sits on the ground plane (Y = 0) with its bottom at Y = 0
+    // Since we centered the object, we need to move it up by half its height
+    object.position.y = size.y * 0.5;
+    
+    // Ensure the object is centered at world origin (0, 0, 0) horizontally
+    object.position.x = 0;
+    object.position.z = 0;
 
     const id = uid("asset");
     setItems((prev) => [...prev, { id, name, object }]);
@@ -773,6 +963,33 @@ export default function Sandbox3D() {
 
       {/* Bottom Right Controls */}
       <div className="pointer-events-auto absolute right-4 bottom-4 z-10 flex flex-col gap-2 items-end">
+        {/* Voice Transcript Display - show above controls when listening */}
+        {voiceEnabled && (currentTranscript || finalTranscript) && (
+          <div className="rounded-lg bg-neutral-900/90 backdrop-blur-md px-4 py-3 text-sm text-neutral-100 shadow-lg border border-neutral-700/50 max-w-md">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-xs text-neutral-400">Listening:</span>
+            </div>
+            <div className="mt-1">
+              {finalTranscript && (
+                <div className="text-neutral-200">{finalTranscript}</div>
+              )}
+              {currentTranscript && (
+                <div className="italic text-neutral-300">{currentTranscript}</div>
+              )}
+            </div>
+          </div>
+        )}
+        
+        {/* Voice Control Toggle */}
+        <button 
+          className={`rounded-lg px-3 py-2 transition-all text-sm font-medium ${voiceEnabled ? "bg-green-600 hover:bg-green-700 text-white" : "bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300"} backdrop-blur-md shadow-lg`}
+          onClick={() => setVoiceEnabled(!voiceEnabled)}
+          title="Toggle voice control"
+        >
+          {voiceEnabled ? "🎤 Voice On" : "🎤 Voice Off"}
+        </button>
+        
         {/* Gesture Control Toggle */}
         <button 
           className={`rounded-lg px-3 py-2 transition-all text-sm font-medium ${gestureEnabled ? "bg-purple-600 hover:bg-purple-700 text-white" : "bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300"} backdrop-blur-md shadow-lg`}
@@ -847,7 +1064,7 @@ export default function Sandbox3D() {
         {/* Gesture Detector - only show when enabled */}
         {gestureEnabled && (
           <div className="mt-2 flex flex-col gap-2">
-            <GestureDetectorCompact
+            <GestureDetector
               onGestureChange={setCurrentGesture}
               onOrientationChange={(yaw, roll) => {
                 setGestureYaw(yaw);
