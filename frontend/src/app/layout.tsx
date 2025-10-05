@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "VibeCAD - AI-Powered 3D CAD Generation",
-  description: "Transform your sketches into 3D CAD models with AI. Upload photos or draw directly to generate professional CAD designs.",
+  title: "VibeCAD: CAD for everyone",
+  description: "Transform your sketches into 3D CAD models with AI. Manipulate your designs with voice and hand gestures.",
 };
 
 export default function RootLayout({
