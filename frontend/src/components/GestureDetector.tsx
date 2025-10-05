@@ -21,7 +21,6 @@ export default function GestureDetector({
   const [handLandmarker, setHandLandmarker] = useState<HandLandmarker | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [currentGesture, setCurrentGesture] = useState<GestureType>("UNKNOWN");
-  const [pitch, setPitch] = useState<number | null>(null);
   const [yaw, setYaw] = useState<number | null>(null);
   const [roll, setRoll] = useState<number | null>(null);
   const [pitch, setPitch] = useState<number | null>(null);

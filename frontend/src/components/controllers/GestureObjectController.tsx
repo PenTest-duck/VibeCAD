@@ -7,7 +7,6 @@ import { MovementPlane } from "@/types/sandbox.types";
 interface GestureObjectControllerProps {
   selectedObject: THREE.Object3D;
   gesture: GestureType;
-  pitch: number | null;
   yaw: number | null;
   roll: number | null;
   pitch: number | null;
@@ -20,7 +19,6 @@ interface GestureObjectControllerProps {
 export function GestureObjectController({ 
   selectedObject,
   gesture,
-  pitch, 
   yaw, 
   roll,
   pitch,
@@ -29,7 +27,6 @@ export function GestureObjectController({
   scaleEnabled,
   movementPlane
 }: GestureObjectControllerProps) {
-  const lastPitchRef = useRef<number | null>(null);
   const lastYawRef = useRef<number | null>(null);
   const lastRollRef = useRef<number | null>(null);
   const lastPitchRef = useRef<number | null>(null);
