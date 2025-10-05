@@ -77,11 +77,12 @@ def detect_direction(hand_landmarks):
 
 def detect_pointing_gesture(hand_landmarks):
     """
-    Determines if the hand is pointing with the index finger and
-    returns the cardinal direction. Returns None if not pointing.
+    Determines if the hand is pointing with the index and middle fingers extended.
+    Returns the cardinal direction if pointing, else None.
     """
     states = fingers_up(hand_landmarks)
-    if states == [1, 0, 0, 0]:  # Only index finger extended
+    # Two-finger pointing: index + middle extended, ring + pinky folded
+    if states == [1, 1, 0, 0]:
         return detect_direction(hand_landmarks)
     else:
         return None
@@ -146,6 +147,45 @@ def get_hand_orientation(hand_landmarks):
 
     return yaw, normalize_angle(roll+100)
 
+# --- Added for pointing cursor ---
+def draw_pointing_cursor(frame, hand_landmarks):
+    """Draws a cursor in the direction between the index and middle fingers and prints normalized coordinates."""
+    h, w, _ = frame.shape
+    index_tip = hand_landmarks.landmark[8]
+    middle_tip = hand_landmarks.landmark[12]
+    wrist = hand_landmarks.landmark[0]
+
+    # Midpoint between index and middle fingertips
+    tip_center = np.array([
+        (index_tip.x + middle_tip.x) / 2,
+        (index_tip.y + middle_tip.y) / 2
+    ])
+
+    # Direction vector from wrist to tip_center
+    dir_vec = np.array([
+        tip_center[0] - wrist.x,
+        tip_center[1] - wrist.y
+    ])
+    dir_vec /= np.linalg.norm(dir_vec) + 1e-6
+
+    # Convert to pixel coordinates
+    start = np.array([tip_center[0] * w, tip_center[1] * h])
+    cursor = start + dir_vec * 200  # extend forward
+    cursor = np.clip(cursor, [0, 0], [w-1, h-1])
+    cursor = tuple(cursor.astype(int))
+
+    # Normalize to [0, 1]
+    norm_x = round(cursor[0] / w, 2)
+    norm_y = round(cursor[1] / h, 2)
+
+    # Draw cursor and direction line
+    cv2.circle(frame, cursor, 10, (0, 0, 255), -1)
+    cv2.line(frame, tuple(start.astype(int)), cursor, (255, 0, 0), 2)
+
+    # Print normalized coordinates
+    return f"Pointing at (x={norm_x}, y={1-norm_y})"
+
+
 
 # Open webcam
 cap = cv2.VideoCapture(0)
@@ -172,7 +212,9 @@ with mp_hands.Hands(
                 yaw, roll = get_hand_orientation(hand_landmarks)
 
 
-                if gesture != "UNKNOWN":
+                if detect_pointing_gesture(hand_landmarks):
+                    display_text = draw_pointing_cursor(frame, hand_landmarks)
+                elif gesture != "UNKNOWN":
                     display_text = f"Gesture: {gesture}"
                 elif is_fist_closed(hand_landmarks):
                     display_text = f"Yaw: {yaw:.1f} degrees, Roll: {roll:.1f} degrees"

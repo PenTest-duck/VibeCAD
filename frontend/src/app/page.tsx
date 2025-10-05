@@ -25,9 +25,13 @@ export default function Home() {
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
     
+    // Calculate scaling factors
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
     return {
-      x: clientX - rect.left,
-      y: clientY - rect.top
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY
     };
   }, []);
 
@@ -102,6 +106,13 @@ export default function Home() {
   const generateCAD = useCallback(() => {
     // This will be implemented to send the sketch to the backend
     console.log('Generating CAD from:', activeTab === 'upload' ? uploadedFile : 'canvas');
+
+    if (activeTab === 'draw' && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const pngDataUrl = canvas.toDataURL('image/png');
+      console.log('Canvas PNG Data URL:', pngDataUrl);
+      // You can now use pngDataUrl to send the image to the backend or for further processing
+    }
   }, [activeTab, uploadedFile]);
 
   return (
