@@ -26,6 +26,8 @@ interface SandboxUIProps {
   setGestureEnabled: (enabled: boolean) => void;
   gestureScaleEnabled: boolean;
   setGestureScaleEnabled: (enabled: boolean) => void;
+  gestureRotationEnabled: boolean;
+  setGestureRotationEnabled: (enabled: boolean) => void;
   movementPlane: MovementPlane;
   setMovementPlane: (plane: MovementPlane) => void;
   setCurrentGesture: (gesture: GestureType) => void;
@@ -50,6 +52,9 @@ interface SandboxUIProps {
   
   // UI state
   showCameraHint: boolean;
+  
+  // Camera controls
+  onResetCamera?: () => void;
 }
 
 export function SandboxUI({
@@ -68,6 +73,8 @@ export function SandboxUI({
   setGestureEnabled,
   gestureScaleEnabled,
   setGestureScaleEnabled,
+  gestureRotationEnabled,
+  setGestureRotationEnabled,
   movementPlane,
   setMovementPlane,
   setCurrentGesture,
@@ -82,6 +89,7 @@ export function SandboxUI({
   currentTranscript,
   finalTranscript,
   showCameraHint,
+  onResetCamera,
 }: SandboxUIProps) {
   return (
     <>
@@ -124,20 +132,17 @@ export function SandboxUI({
           </button>
         </div>
 
-        {/* Snap Controls */}
-        {snap && (
-          <div className="inline-flex items-center gap-2 bg-neutral-800/50 rounded-lg px-3 py-1.5">
-            <span className="text-xs text-neutral-400">Step:</span>
-            <input
-              className="w-14 bg-neutral-700 rounded px-2 py-1 outline-none text-xs focus:ring-2 focus:ring-blue-500"
-              type="number"
-              min={0.01}
-              step={0.01}
-              value={snapStep}
-              onChange={(e) => setSnapStep(Math.max(0.01, Number(e.target.value)))}
-            />
-          </div>
-        )}
+      </div>
+
+      {/* Home Button - Top Right (Replaces ViewCube) */}
+      <div className="pointer-events-auto absolute right-4 top-4 z-10">
+        <button 
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600/90 hover:bg-blue-700 px-4 py-3 transition-colors font-medium shadow-xl border border-blue-500/50 backdrop-blur-md"
+          onClick={onResetCamera}
+          title="Reset Camera to Home View"
+        >
+          🏠 Home
+        </button>
       </div>
 
       {/* Bottom Left - Controls Hint */}
@@ -150,7 +155,7 @@ export function SandboxUI({
           <div>🖱️ Left Click: Pan</div>
           <div>🖱️ Middle Click: Rotate</div>
           <div>🖱️ Scroll: Zoom</div>
-          <div>🎯 ViewCube: Quick Views</div>
+          <div> Home Button (Top Right): Reset View</div>
           <div className="mt-2 pt-2 border-t border-neutral-700/50 font-medium">Gesture Controls:</div>
           <div>🎥 No selection: Controls camera</div>
           <div>📦 With selection: Controls object</div>
@@ -197,17 +202,6 @@ export function SandboxUI({
         >
           {gestureEnabled ? "👋 Gesture On" : "👋 Gesture Off"}
         </button>
-
-        {/* Gesture Scale Toggle */}
-        {gestureEnabled && selected && (
-          <button 
-            className={`rounded-lg px-3 py-2 transition-all text-sm font-medium ${gestureScaleEnabled ? "bg-orange-600 hover:bg-orange-700 text-white" : "bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300"} backdrop-blur-md shadow-lg`}
-            onClick={() => setGestureScaleEnabled(!gestureScaleEnabled)}
-            title="Toggle gesture zoom/scale control"
-          >
-            {gestureScaleEnabled ? "🔍 Scale On" : "🔍 Scale Off"}
-          </button>
-        )}
 
         {/* Movement Plane Selector */}
         {selected && (
@@ -271,10 +265,32 @@ export function SandboxUI({
                 setGesturePitch(pitch);
                 setGestureYaw(yaw);
                 setGestureRoll(roll);
-                setGesturePitch(pitch);
               }}
               onFistChange={setGestureFistClosed}
             />
+            
+            {/* Gesture Control Toggles - Always visible when gestures enabled */}
+            <div className="flex flex-col gap-2">
+              {/* Gesture Scale Toggle - only for objects */}
+              {selected && (
+                <button 
+                  className={`rounded-lg px-3 py-2 transition-all text-sm font-medium ${gestureScaleEnabled ? "bg-orange-600 hover:bg-orange-700 text-white" : "bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300"} backdrop-blur-md shadow-lg`}
+                  onClick={() => setGestureScaleEnabled(!gestureScaleEnabled)}
+                  title="Toggle gesture scale control (for selected objects)"
+                >
+                  {gestureScaleEnabled ? "🔍 Scale On" : "🔍 Scale Off"}
+                </button>
+              )}
+              
+              {/* Gesture Rotation Toggle - works for both camera and objects */}
+              <button 
+                className={`rounded-lg px-3 py-2 transition-all text-sm font-medium ${gestureRotationEnabled ? "bg-purple-600 hover:bg-purple-700 text-white" : "bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300"} backdrop-blur-md shadow-lg`}
+                onClick={() => setGestureRotationEnabled(!gestureRotationEnabled)}
+                title={selected ? "Toggle gesture rotation control (for selected object)" : "Toggle gesture rotation control (for camera)"}
+              >
+                {gestureRotationEnabled ? "🔄 Rotate On" : "🔄 Rotate Off"}
+              </button>
+            </div>
             
             {/* Gesture status indicator */}
             {!selected && smoothedGesture.gesture !== "UNKNOWN" && (
